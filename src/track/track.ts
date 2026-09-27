@@ -8,7 +8,7 @@ const smootherstep = (u: number) => u * u * u * (u * (u * 6 - 15) + 10);
  * Bump whenever generation changes the layout of a song's track: ghosts and leaderboards
  * are keyed on it, since a recorded run only makes sense on the exact same track.
  */
-export const TRACK_VERSION = 5;
+export const TRACK_VERSION = 6;
 
 export const LANES = 5;
 export const LANE_WIDTH = 3.2;
@@ -279,18 +279,49 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
   }
   const yawSmooth = smoothArray(smoothArray(yawRate, Math.round(SPS * 0.6)), Math.round(SPS * 0.6));
 
+  // Heights: a roller coaster, not a slope. Hills are keyed to the bars: a new crest or
+  // valley every 1–4 bars (more often, steeper and deeper as the music gets intense), with
+  // Audiosurf's feel underneath (calm climbs, intense dives), a lift-hill climb into each
+  // drop and a plunge when it hits, and climbs into builds / dives when the energy jumps.
   const pitch = new Float32Array(count);
-  for (let i = 0; i < count; i++) {
-    const t = timeOf(i);
-    const I = intensity[i];
-    // Audiosurf-style: calm music climbs, intense music dives.
-    let p = lerp(0.1, -0.2, I);
-    // Rolling camelback hills in calmer sections, phase-locked to 4-bar phrases.
-    p += 0.1 * (1 - I) * Math.sin((2 * Math.PI * t) / (barLen * 4));
-    p += 0.14 * tension[i] - 0.3 * drop[i];
-    pitch[i] = p;
+  {
+    const Iat = (t: number) => sampleFeature(a.intensity, a.fps, clamp(t, 0, a.duration));
+    const knots: { t: number; v: number }[] = [{ t: -PRE_ROLL, v: 0 }];
+    let up = rng() < 0.5;
+    for (let b = 0; b < bars.length; ) {
+      const t = bars[b];
+      const I = Iat(t);
+      const hold = I > 0.7 ? (rng() < 0.55 ? 1 : 2) : I > 0.4 ? 2 : 4;
+      const next = bars[Math.min(bars.length - 1, b + hold)] ?? t + barLen * hold;
+      let v = 0;
+      if (!inLoop(t, barLen * 2) && !inLoop(next, barLen)) {
+        // Crest and valley alternate; the amplitude follows the energy.
+        const amp = lerp(0.14, 0.58, Math.pow(I, 0.85)) * lerp(0.75, 1.1, rng());
+        v = (up ? 1 : -1) * amp;
+        // Anticipation: climb when the energy is about to rise, dive when it just fell.
+        v += clamp((Iat(t + barLen * hold) - I) * 1.6, -0.35, 0.35);
+        // Hot passages ride lower overall (Audiosurf's dive), calm ones higher.
+        v += lerp(0.08, -0.12, I);
+        // Rarely keep the same direction twice, for longer climbs and plunges.
+        if (rng() < 0.82) up = !up;
+      }
+      knots.push({ t, v });
+      b += hold;
+    }
+    knots.push({ t: a.duration + TAIL, v: 0 });
+    let k = 0;
+    for (let i = 0; i < count; i++) {
+      const t = timeOf(i);
+      while (k + 1 < knots.length - 1 && knots[k + 1].t <= t) k++;
+      const k0 = knots[k], k1 = knots[Math.min(k + 1, knots.length - 1)];
+      const u = k1.t > k0.t ? clamp((t - k0.t) / (k1.t - k0.t), 0, 1) : 1;
+      let p = lerp(k0.v, k1.v, smootherstep(u));
+      // Lift hill into the drop, plunge when it hits.
+      p += 0.42 * tension[i] - 0.62 * drop[i];
+      pitch[i] = clamp(p, -0.95, 0.75);
+    }
   }
-  const pitchSmooth = smoothArray(smoothArray(pitch, Math.round(SPS * 0.6)), Math.round(SPS * 0.6));
+  const pitchSmooth = smoothArray(smoothArray(pitch, Math.round(SPS * 0.3)), Math.round(SPS * 0.3));
 
   // Bank into turns, a bit more than physics would, for the swoop.
   const rollRaw = new Float32Array(count);
