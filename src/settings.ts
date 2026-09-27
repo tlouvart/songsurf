@@ -9,9 +9,11 @@ export interface Settings {
   showFps: boolean;
   quality: Quality;
   screenEffects: boolean;
+  /** hide lobby codes (on screen and in the URL) */
+  streamer: boolean;
 }
 
-const DEFAULTS: Settings = { music: 0.9, effects: 0.8, blockSounds: true, showFps: false, quality: 'high', screenEffects: true };
+const DEFAULTS: Settings = { music: 0.9, effects: 0.8, blockSounds: true, showFps: false, quality: 'high', screenEffects: true, streamer: false };
 const KEY = 'songsurf:settings';
 
 let current: Settings = load();

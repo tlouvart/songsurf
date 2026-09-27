@@ -74,11 +74,12 @@ export class ProfileScreen {
       $<HTMLInputElement>(id).addEventListener('input', (e) => updateSettings({ [key]: Number((e.target as HTMLInputElement).value) }));
     bindRange('set-music', 'music');
     bindRange('set-effects', 'effects');
-    const bindSwitch = (id: string, key: 'blockSounds' | 'showFps' | 'screenEffects') =>
+    const bindSwitch = (id: string, key: 'blockSounds' | 'showFps' | 'screenEffects' | 'streamer') =>
       $<HTMLInputElement>(id).addEventListener('change', (e) => updateSettings({ [key]: (e.target as HTMLInputElement).checked }));
     bindSwitch('set-block', 'blockSounds');
     bindSwitch('set-fps', 'showFps');
     bindSwitch('set-fx', 'screenEffects');
+    bindSwitch('set-streamer', 'streamer');
     $('set-quality').querySelectorAll<HTMLButtonElement>('[data-q]').forEach((b) =>
       b.addEventListener('click', () => {
         updateSettings({ quality: b.dataset.q as Quality });
@@ -114,6 +115,7 @@ export class ProfileScreen {
     $<HTMLInputElement>('set-block').checked = s.blockSounds;
     $<HTMLInputElement>('set-fps').checked = s.showFps;
     $<HTMLInputElement>('set-fx').checked = s.screenEffects;
+    $<HTMLInputElement>('set-streamer').checked = s.streamer;
     $('set-quality').querySelectorAll<HTMLElement>('[data-q]').forEach((b) => b.classList.toggle('active', b.dataset.q === s.quality));
   }
 

@@ -4,7 +4,8 @@ import * as db from './db.ts';
 import { ensureAudio, getInfo, parseVideoId } from './youtube.ts';
 import {
   LOBBY_SIZE, PLACE_POINTS, RANKED_UNLOCK, ROUNDS,
-  type ChatMsg, type ClientMsg, type FinalRow, type LobbyView, type Mode, type Phase, type RoundResult, type ServerMsg, type SongRef,
+  type ChatMsg, type ClientMsg, type FinalRow, type LobbySummary, type LobbyView, type Mode, type Phase, type RoundResult, type ServerMsg, type SongRef,
+  type Visibility,
 } from '../src/net/protocol.ts';
 import { creditsForScore, PLACE_CREDITS } from '../src/ship/catalog.ts';
 import { Pacer, RunVerifier, type InputChunk, type TrackCore } from '../src/game/replay.ts';
@@ -16,7 +17,8 @@ import { songData } from './tracks.ts';
  * Lobbies: up to 8 pilots, launched after 2 minutes (or 10 s once full, needs 2+), then a
  * 3-round match. Each round: vote between 3 submitted songs → everyone loads → synced start
  * → placements. Ranked lobbies are matchmade by Elo and move ratings; casual lobbies are
- * for fun and have a short code so friends can join them.
+ * for fun and have a short code so friends can join them. Public casual lobbies are also
+ * listed for anyone to browse; private ones are joined by code (or from a friend's profile).
  *
  * Scores are the server's: racers stream their inputs, the server replays them on its own
  * copy of the track (and checks they keep pace with the music), so a modified client can't
@@ -76,6 +78,8 @@ function newCode(): string {
 class Lobby {
   id = randomBytes(4).toString('hex');
   code = newCode();
+  /** casual only: listed in the lobby browser, or code-only */
+  visibility: Visibility = 'public';
   createdAt = Date.now();
   matchId = randomBytes(8).toString('hex');
   phase: Phase = 'waiting';
@@ -101,6 +105,12 @@ class Lobby {
     return a.length ? a.reduce((s, m) => s + m.player.elo, 0) / a.length : 1000;
   }
 
+  /** The host: the longest-standing pilot still in (whoever opened it, first). */
+  get host(): Member | undefined {
+    for (const m of this.members.values()) if (!m.left) return m;
+    return undefined;
+  }
+
   get active() {
     return [...this.members.values()].filter((m) => !m.left);
   }
@@ -121,7 +131,8 @@ function view(l: Lobby): LobbyView {
   const votes: Record<string, number> = {};
   for (const m of l.members.values()) if (m.vote) votes[m.vote] = (votes[m.vote] ?? 0) + 1;
   return {
-    id: l.id, code: l.mode === 'casual' ? l.code : null, mode: l.mode, phase: l.phase, round: l.round, rounds: ROUNDS,
+    id: l.id, code: l.mode === 'casual' ? l.code : null, mode: l.mode, visibility: l.visibility, host: l.host?.player.id ?? null,
+    phase: l.phase, round: l.round, rounds: ROUNDS,
     deadline: l.phase === 'racing' ? l.raceEnd : l.deadline, startAt: l.startAt, song: l.song,
     candidates: l.candidates, votes,
     players: [...l.members.values()].map((m) => ({
@@ -178,8 +189,9 @@ function leaveCurrent(playerId: number) {
   else broadcast(l);
 }
 
-function createLobby(mode: Mode): Lobby {
+function createLobby(mode: Mode, visibility: Visibility = 'public'): Lobby {
   const l = new Lobby(mode);
+  l.visibility = visibility;
   lobbies.set(l.id, l);
   system(l, 'Lobby opened');
   return l;
@@ -191,7 +203,7 @@ function createLobby(mode: Mode): Lobby {
  */
 function findOrCreate(mode: Mode, elo: number): Lobby {
   const now = Date.now();
-  const open = [...lobbies.values()].filter((l) => l.mode === mode && l.phase === 'waiting' && l.members.size < LOBBY_SIZE);
+  const open = [...lobbies.values()].filter((l) => l.mode === mode && l.phase === 'waiting' && l.members.size < LOBBY_SIZE && l.visibility === 'public');
   let best: Lobby | null = null;
   if (mode === 'ranked') {
     let bestGap = Infinity;
@@ -508,6 +520,22 @@ export function refreshPlayer(id: number) {
   }
 }
 
+/** Public casual lobbies still waiting for pilots, fullest first (the lobby browser). */
+export function publicLobbies(): LobbySummary[] {
+  return [...lobbies.values()]
+    .filter((l) => l.mode === 'casual' && l.visibility === 'public' && l.phase === 'waiting' && l.members.size < LOBBY_SIZE)
+    .sort((a, b) => b.members.size - a.members.size || a.createdAt - b.createdAt)
+    .slice(0, 50)
+    .map((l) => ({
+      code: l.code,
+      host: l.host?.player.name ?? '',
+      players: l.members.size,
+      avgElo: Math.round(l.avgElo),
+      startsAt: l.members.size >= 2 ? l.deadline : null,
+      songs: [...l.members.values()].filter((m) => m.submission).length,
+    }));
+}
+
 export function presence(id: number) {
   const l = playerLobby.get(id);
   return {
@@ -562,6 +590,19 @@ export function onConnection(ws: WebSocket) {
         addMember(findOrCreate(msg.mode, fresh.elo), fresh, ws);
         return;
       }
+      case 'create': {
+        const visibility: Visibility = msg.visibility === 'private' ? 'private' : 'public';
+        leaveCurrent(me.id);
+        addMember(createLobby('casual', visibility), db.byId(me.id)!, ws);
+        return;
+      }
+      case 'visibility':
+        if (l && m && l.mode === 'casual' && l.phase === 'waiting' && l.host === m && (msg.visibility === 'public' || msg.visibility === 'private')) {
+          l.visibility = msg.visibility;
+          system(l, msg.visibility === 'public' ? 'Lobby is now public' : 'Lobby is now private');
+          broadcast(l);
+        }
+        return;
       case 'join': {
         const code = String(msg.code ?? '').trim().toUpperCase();
         const target = [...lobbies.values()].find((x) => x.code === code && x.mode === 'casual');

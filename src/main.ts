@@ -15,11 +15,12 @@ import { Stage } from './render/stage.ts';
 import { generateTrack, PRE_ROLL, resetBlocks, TRACK_VERSION, type Track } from './track/track.ts';
 import { Hud, type Rival } from './ui/hud.ts';
 import { LobbyScreen } from './ui/lobby.ts';
+import { LobbyBrowser } from './ui/browser.ts';
 import { Menu } from './ui/menu.ts';
 import { Hangar } from './ui/hangar.ts';
 import { ProfileScreen } from './ui/profile.ts';
 import { Leaderboard } from './ui/leaderboard.ts';
-import { onSettings } from './settings.ts';
+import { onSettings, settings } from './settings.ts';
 import { DEFAULT_LOADOUT, loadoutKey, sanitizeLoadout, type Loadout } from './ship/catalog.ts';
 import { ShipViewer, shipThumb } from './ship/viewer.ts';
 
@@ -349,6 +350,8 @@ function leaveLobby() {
 
 /** The address bar mirrors the casual lobby you're in, so it can be shared as is. */
 function setLobbyUrl(code: string | null) {
+  // Streamer mode keeps the code out of the address bar.
+  if (settings().streamer) code = null;
   const url = new URL(location.href);
   if ((url.searchParams.get('lobby') ?? null) === code) return;
   if (code) url.searchParams.set('lobby', code);
@@ -371,16 +374,29 @@ function backToMenuFromLobby() {
 // UI wiring
 // ---------------------------------------------------------------------------
 
+function queue(mode: LobbyMode) {
+  if (!net.connected) return toast('Offline');
+  menu.setQueued(mode);
+  net.send({ type: 'queue', mode });
+}
+
+function joinLobby(code: string) {
+  if (!net.connected) return toast('Offline');
+  net.send({ type: 'join', code });
+}
+
+new LobbyBrowser({
+  join: joinLobby,
+  quick: () => queue('casual'),
+  create(visibility) {
+    if (!net.connected) return toast('Offline');
+    net.send({ type: 'create', visibility });
+  },
+});
+
 const menu = new Menu({
-  queue(mode: LobbyMode) {
-    if (!net.connected) return toast('Offline');
-    menu.setQueued(mode);
-    net.send({ type: 'queue', mode });
-  },
-  joinLobby(code) {
-    if (!net.connected) return toast('Offline');
-    net.send({ type: 'join', code });
-  },
+  queue,
+  joinLobby,
   openProfile() {
     profileScreen.open('profile');
   },
@@ -411,6 +427,11 @@ onSettings((s) => {
   stage.setQuality(s.quality);
   stage.effects = s.screenEffects;
   show('fps', s.showFps);
+  $('code-input').classList.toggle('masked', s.streamer);
+  if (lobby) {
+    setLobbyUrl(lobby.code);
+    lobbyScreen.render(lobby);
+  }
 });
 
 const hangar = new Hangar({
@@ -450,10 +471,12 @@ const lobbyScreen = new LobbyScreen(
     },
     copyInvite(code) {
       const link = `${location.origin}${location.pathname}?lobby=${code}`;
-      navigator.clipboard?.writeText(link).then(
-        () => toast('Invite link copied'),
-        () => prompt('Invite link', link),
-      ) ?? prompt('Invite link', link);
+      // Streamer mode never falls back to showing the link.
+      const fallback = () => (settings().streamer ? toast("Couldn't copy the invite link") : prompt('Invite link', link));
+      navigator.clipboard?.writeText(link).then(() => toast('Invite link copied'), fallback) ?? fallback();
+    },
+    setVisibility(visibility) {
+      net.send({ type: 'visibility', visibility });
     },
     submit(url) {
       lobbyScreen.submitError = '';

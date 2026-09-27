@@ -1,6 +1,8 @@
 /** Messages exchanged over the /ws socket. Shared by the browser and the server. */
 
 export type Mode = 'ranked' | 'casual';
+/** casual lobbies: listed in the lobby browser, or joinable by code only */
+export type Visibility = 'public' | 'private';
 export type Phase = 'waiting' | 'voting' | 'loading' | 'racing' | 'results' | 'finished';
 
 export const LOBBY_SIZE = 8;
@@ -111,6 +113,9 @@ export interface LobbyView {
   /** casual lobbies: short code to invite friends (?lobby=CODE); null for ranked */
   code: string | null;
   mode: Mode;
+  visibility: Visibility;
+  /** player id of the host (can switch visibility), or null */
+  host: number | null;
   phase: Phase;
   /** 0-based round index */
   round: number;
@@ -128,11 +133,25 @@ export interface LobbyView {
   final: FinalRow[] | null;
 }
 
+/** A public lobby, as listed in the lobby browser. */
+export interface LobbySummary {
+  code: string;
+  host: string;
+  players: number;
+  avgElo: number;
+  /** server time (ms) the match starts, once there are enough pilots */
+  startsAt: number | null;
+  /** songs submitted so far */
+  songs: number;
+}
+
 export type ClientMsg =
   | { type: 'hello'; token: string }
   | { type: 'ping'; t: number }
   | { type: 'queue'; mode: Mode }
   | { type: 'join'; code: string }
+  | { type: 'create'; visibility: Visibility }
+  | { type: 'visibility'; visibility: Visibility }
   | { type: 'leave' }
   | { type: 'submit'; url: string }
   | { type: 'vote'; key: string }

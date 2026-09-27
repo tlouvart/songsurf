@@ -94,7 +94,7 @@ export class Menu {
   private applyLocks() {
     const played = this.player?.games_played ?? 0;
     const locked = played < RANKED_UNLOCK;
-    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-queue], #code-form button')) {
+    for (const b of document.querySelectorAll<HTMLButtonElement>('[data-queue], [data-online], #code-form button')) {
       b.disabled = !this.online || (b.dataset.queue === 'ranked' && locked);
     }
     const note = $('ranked-lock');

@@ -94,7 +94,14 @@
 
             <article class="mode-card casual">
               <div class="mode-head"><span class="mode-icon">✦</span><div><h2>Casual</h2><p>Up to 8 · 3 rounds</p></div></div>
-              <button class="btn ghost wide" data-queue="casual">Find match</button>
+              <button class="btn ghost wide" id="casual-browse" data-online>Browse</button>
+              <div class="create-row">
+                <div class="seg small" id="casual-vis" role="radiogroup" aria-label="Lobby visibility">
+                  <button class="seg-btn active" data-vis="public" title="Listed in the lobby browser">Public</button>
+                  <button class="seg-btn" data-vis="private" title="Joined with its code only">Private</button>
+                </div>
+                <button class="btn primary small" id="casual-create" data-online>Create</button>
+              </div>
             </article>
           </div>
 
@@ -184,6 +191,7 @@
           <div class="setting"><span>Block sounds</span><label class="switch"><input type="checkbox" id="set-block" /><i></i></label></div>
           <div class="setting"><span>Screen effects</span><label class="switch"><input type="checkbox" id="set-fx" /><i></i></label></div>
           <div class="setting"><span>Show FPS</span><label class="switch"><input type="checkbox" id="set-fps" /><i></i></label></div>
+          <div class="setting"><span>Streamer mode<small>Hides lobby codes on screen and in the address bar</small></span><label class="switch"><input type="checkbox" id="set-streamer" /><i></i></label></div>
           <div class="setting"><span>Graphics</span>
             <div class="seg" id="set-quality">
               <button class="seg-btn" data-q="low">Low</button>
@@ -201,6 +209,18 @@
         <header class="panel-head"><h2>Leaderboard</h2><button class="icon-btn" id="lb-close">✕</button></header>
         <div class="lb-scroll"><table class="table lb" id="lb-table"></table></div>
         <table class="table lb lb-me" id="lb-me"></table>
+      </div>
+    </section>
+
+    <!-- Casual lobby browser -->
+    <section id="browse" class="overlay hidden">
+      <div class="panel-wrap small">
+        <header class="panel-head"><h2>Casual lobbies</h2><button class="icon-btn" id="browse-close">✕</button></header>
+        <div class="browse-bar">
+          <button class="btn primary small" id="browse-quick">Quick join</button>
+          <span class="browse-count" id="browse-count"></span>
+        </div>
+        <ul class="browse-list" id="browse-list"></ul>
       </div>
     </section>
 
@@ -289,6 +309,7 @@
           </div>
           <div class="rounds" id="lobby-rounds"></div>
           <button class="code-chip" id="lobby-code" title="Copy invite link"><small>CODE</small><b id="lobby-code-text">—</b><span>⧉</span></button>
+          <button class="vis-chip hidden" id="lobby-vis"></button>
           <div class="lobby-timer" id="lobby-timer"></div>
           <button class="btn ghost small" id="lobby-leave">Leave</button>
         </header>

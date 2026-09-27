@@ -1,5 +1,6 @@
 import type { HistoryGame } from '../net/api.ts';
-import { LOBBY_SIZE, type LobbyView, type Mode, type SongRef } from '../net/protocol.ts';
+import { LOBBY_SIZE, type LobbyView, type Mode, type SongRef, type Visibility } from '../net/protocol.ts';
+import { settings } from '../settings.ts';
 import type { Loadout } from '../ship/catalog.ts';
 import { shipThumb } from '../ship/viewer.ts';
 
@@ -10,6 +11,7 @@ const fmt = (n: number) => Math.round(n).toLocaleString('en-US');
 export interface LobbyHandlers {
   inspect(name: string, loadout: Loadout): void;
   copyInvite(code: string): void;
+  setVisibility(v: Visibility): void;
   submit(url: string): void;
   vote(key: string): void;
   chat(text: string): void;
@@ -43,6 +45,10 @@ export class LobbyScreen {
   constructor(private h: LobbyHandlers, private serverNow: () => number) {
     $('lobby-leave').addEventListener('click', () => this.h.leave());
     $('lobby-code').addEventListener('click', () => this.view?.code && this.h.copyInvite(this.view.code));
+    $('lobby-vis').addEventListener('click', () => {
+      const v = this.view;
+      if (v && v.host === this.me && v.phase === 'waiting') this.h.setVisibility(v.visibility === 'public' ? 'private' : 'public');
+    });
     $<HTMLFormElement>('chat-form').addEventListener('submit', (e) => {
       e.preventDefault();
       const input = $<HTMLInputElement>('chat-input');
@@ -69,7 +75,15 @@ export class LobbyScreen {
     const badge = $('lobby-mode');
     badge.textContent = v.mode === 'ranked' ? 'RANKED' : 'CASUAL';
     $('lobby-code').classList.toggle('hidden', !v.code);
-    $('lobby-code-text').textContent = v.code ?? '';
+    // Streamer mode: the code stays copyable but never shows on screen.
+    $('lobby-code-text').textContent = v.code ? (settings().streamer ? '•••••' : v.code) : '';
+    const vis = $<HTMLButtonElement>('lobby-vis');
+    const canSwitch = v.host === this.me && v.phase === 'waiting';
+    vis.classList.toggle('hidden', v.mode !== 'casual');
+    vis.classList.toggle('editable', canSwitch);
+    vis.disabled = !canSwitch;
+    vis.title = canSwitch ? 'Switch between listed and code-only' : v.visibility === 'public' ? 'Listed in the lobby browser' : 'Joined with its code only';
+    vis.textContent = v.visibility === 'public' ? '◉ Public' : '🔒 Private';
     badge.classList.toggle('casual', v.mode === 'casual');
     $('lobby-phase').textContent = PHASE_TITLE[v.phase] ?? v.phase;
     $('lobby-sub').textContent =
