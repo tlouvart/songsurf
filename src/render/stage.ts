@@ -233,25 +233,23 @@ export class Stage {
   }
 
   /**
-   * Bumps on the kicks ahead: only where the song has a steady kick / bassline and isn't quiet,
-   * and on beats 1 and 3 in fast songs (where the kick usually sits), so it grooves.
+   * Beat waves ahead: a crest on every beat, as tall as the drums hit there, wherever the
+   * drums keep a steady pattern (flat where they don't).
    */
   private layBumps(tr: Track) {
     this.ripples.begin(this.playerS);
     if (!this.ripplesOn) return;
     const beats = tr.beats;
-    let i = Math.max(0, this.lastBeatIdx - 2);
-    while (i > 0 && beats[i].s > this.playerS - 40) i--;
+    let i = Math.max(0, this.lastBeatIdx - 1);
+    while (i > 0 && beats[i].s > this.playerS - 60) i--;
     for (; i < beats.length; i++) {
       const b = beats[i];
-      if (b.s < this.playerS - 40) continue;
-      if (b.s > this.playerS + 560) break;
-      if (tr.bpm > 135 && b.inBar % 2 === 1) continue;
-      const groove = smooth01((b.pulse - 0.3) / 0.3) * smooth01((b.intensity - 0.2) / 0.3) * smooth01((b.kick - 0.15) / 0.3);
-      if (groove <= 0) continue;
-      const next = beats[i + (tr.bpm > 135 ? 2 : 1)];
-      const gap = next ? next.s - b.s : 60;
-      this.ripples.add(b.s, 0.34 * groove * (b.downbeat ? 1.15 : 1), Math.min(12, Math.max(4, gap * 0.32)));
+      if (b.s > this.playerS + 560) {
+        this.ripples.add(b.s, 0);
+        break;
+      }
+      const groove = smooth01((b.pulse - 0.25) / 0.25) * (0.55 + 0.45 * b.hit);
+      this.ripples.add(b.s, 0.3 * groove * (b.downbeat ? 1.1 : 1));
     }
   }
 

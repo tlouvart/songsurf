@@ -75,9 +75,9 @@ export interface BeatMark {
   /** position in the bar, 0 (downbeat) to 3 */
   inBar: number;
   intensity: number;
-  /** 0..1: how hard the bass hits on this beat (kick / bassline) */
-  kick: number;
-  /** 0..1: how steady that bass pulse is around this beat (a groove, not a one-off hit) */
+  /** 0..1: how hard the drums hit on this beat (kick, snare, any strong hit) */
+  hit: number;
+  /** 0..1: how steady those hits are around this beat (a groove, not a one-off) */
   pulse: number;
 }
 
@@ -428,24 +428,27 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
       downbeat: (i - a.downbeatPhase) % 4 === 0,
       inBar: (((i - a.downbeatPhase) % 4) + 4) % 4,
       intensity: intensity[Math.round(indexAtTime(track, t))],
-      kick: 0,
+      hit: 0,
       pulse: 0,
     }));
-  // Bass pulse: how much the low band jumps on each beat compared with its surroundings,
-  // and how steadily it does so over the neighbouring beats (a kick or a bassline groove).
+  // Drum pulse: how much the sound jumps right on each beat compared with the half-beat around
+  // it (bass for kicks, mids for snares, overall level), and how steadily the beats around it
+  // are hit, looking slightly ahead so the waves start with the drums.
   {
-    const low = (t: number) => sampleFeature(a.low, a.fps, clamp(t, 0, a.duration));
-    const raw = track.beats.map((b) => {
+    const spb = 60 / a.bpm;
+    const at = (arr: Float32Array, t: number) => arr[Math.min(arr.length - 1, Math.max(0, Math.round(t * a.fps)))];
+    const jump = (arr: Float32Array, t: number) => {
       let peak = 0, avg = 0, n = 0;
-      for (let d = -0.03; d <= 0.07; d += 0.01) peak = Math.max(peak, low(b.time + d));
-      for (let d = -0.3; d <= 0.3; d += 0.02) { avg += low(b.time + d); n++; }
+      for (let d = -0.04; d <= 0.07; d += 1 / a.fps) peak = Math.max(peak, at(arr, t + d));
+      for (let d = -spb / 2; d <= spb / 2; d += 1 / a.fps) { avg += at(arr, t + d); n++; }
       return Math.max(0, peak - avg / n);
-    });
-    const ref = [...raw].sort((p, q) => p - q)[Math.floor(raw.length * 0.9)] || 1;
-    track.beats.forEach((b, i) => (b.kick = clamp(raw[i] / ref, 0, 1)));
+    };
+    const raw = track.beats.map((b) => Math.max(jump(a.low, b.time), jump(a.mid, b.time), jump(a.loudness, b.time)));
+    const ref = [...raw].sort((p, q) => p - q)[Math.floor(raw.length * 0.85)] || 1;
+    track.beats.forEach((b, i) => (b.hit = clamp(raw[i] / ref, 0, 1)));
     track.beats.forEach((b, i) => {
       let sum = 0, n = 0;
-      for (let k = Math.max(0, i - 4); k <= Math.min(track.beats.length - 1, i + 4); k++) { sum += track.beats[k].kick; n++; }
+      for (let k = Math.max(0, i - 2); k <= Math.min(track.beats.length - 1, i + 3); k++) { sum += track.beats[k].hit; n++; }
       b.pulse = sum / n;
     });
   }
