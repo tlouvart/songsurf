@@ -86,31 +86,28 @@
               <p class="server-note hidden" id="server-note">YouTube unavailable on this server</p>
             </article>
 
-            <article class="mode-card ranked">
-              <div class="mode-head"><span class="mode-icon">♛</span><div><h2>Ranked</h2><p>Up to 8 · 3 rounds · Elo</p></div></div>
-              <button class="btn primary wide" data-queue="ranked">Find match</button>
-              <div class="lock-note hidden" id="ranked-lock"></div>
-            </article>
-
-            <article class="mode-card casual">
-              <div class="mode-head"><span class="mode-icon">✦</span><div><h2>Casual</h2><p>Up to 8 · 3 rounds</p></div></div>
-              <button class="btn ghost wide" id="casual-browse" data-online>Browse</button>
-              <div class="create-row">
-                <div class="seg small" id="casual-vis" role="radiogroup" aria-label="Lobby visibility">
-                  <button class="seg-btn active" data-vis="public" title="Listed in the lobby browser">Public</button>
-                  <button class="seg-btn" data-vis="private" title="Joined with its code only">Private</button>
-                </div>
-                <button class="btn primary small" id="casual-create" data-online>Create</button>
+            <article class="mode-card multi">
+              <div class="mode-head"><span class="mode-icon">✦</span><div><h2>Multiplayer</h2><p>Up to 8 pilots · 3 rounds</p></div></div>
+              <div class="queue-pair">
+                <button class="queue-btn ranked" data-queue="ranked">
+                  <span class="q-title">♛ Ranked</span>
+                  <span class="q-sub" id="ranked-sub">Elo on the line</span>
+                </button>
+                <button class="queue-btn casual" data-queue="casual">
+                  <span class="q-title">✦ Casual</span>
+                  <span class="q-sub">Just for fun</span>
+                </button>
+              </div>
+              <div class="private-row">
+                <span class="fr-label">Private lobby</span>
+                <form class="code-form" id="code-form" autocomplete="off">
+                  <input id="code-input" type="text" maxlength="5" placeholder="CODE" spellcheck="false" autocapitalize="characters" />
+                  <button class="btn primary small" type="submit">Join</button>
+                </form>
+                <span class="fr-sep">or</span>
+                <button class="btn ghost small" id="private-create" data-online>Create</button>
               </div>
             </article>
-          </div>
-
-          <div class="friends-row">
-            <span class="fr-label">Play with friends</span>
-            <form class="code-form" id="code-form" autocomplete="off">
-              <input id="code-input" type="text" maxlength="5" placeholder="CODE" spellcheck="false" autocapitalize="characters" />
-              <button class="btn primary small" type="submit">Join</button>
-            </form>
           </div>
 
           <div class="keys">
@@ -212,18 +209,6 @@
       </div>
     </section>
 
-    <!-- Casual lobby browser -->
-    <section id="browse" class="overlay hidden">
-      <div class="panel-wrap small">
-        <header class="panel-head"><h2>Casual lobbies</h2><button class="icon-btn" id="browse-close">✕</button></header>
-        <div class="browse-bar">
-          <button class="btn primary small" id="browse-quick">Quick join</button>
-          <span class="browse-count" id="browse-count"></span>
-        </div>
-        <ul class="browse-list" id="browse-list"></ul>
-      </div>
-    </section>
-
     <!-- About: credits and fair play -->
     <section id="about" class="overlay hidden">
       <div class="panel-wrap small about">
@@ -309,7 +294,6 @@
           </div>
           <div class="rounds" id="lobby-rounds"></div>
           <button class="code-chip" id="lobby-code" title="Copy invite link"><small>CODE</small><b id="lobby-code-text">—</b><span>⧉</span></button>
-          <button class="vis-chip hidden" id="lobby-vis"></button>
           <div class="lobby-timer" id="lobby-timer"></div>
           <button class="btn ghost small" id="lobby-leave">Leave</button>
         </header>

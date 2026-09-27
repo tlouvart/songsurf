@@ -97,9 +97,8 @@ export class Menu {
     for (const b of document.querySelectorAll<HTMLButtonElement>('[data-queue], [data-online], #code-form button')) {
       b.disabled = !this.online || (b.dataset.queue === 'ranked' && locked);
     }
-    const note = $('ranked-lock');
-    note.classList.toggle('hidden', !locked || !this.player);
-    note.textContent = `🔒 ${Math.min(played, RANKED_UNLOCK)}/${RANKED_UNLOCK} games`;
+    // Ranked opens after a few solo or casual games: the button says how many to go.
+    $('ranked-sub').textContent = locked && this.player ? `🔒 ${Math.min(played, RANKED_UNLOCK)}/${RANKED_UNLOCK} games` : 'Elo on the line';
   }
 
   setQueued(mode: Mode | null) {

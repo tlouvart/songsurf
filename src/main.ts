@@ -15,7 +15,6 @@ import { Stage } from './render/stage.ts';
 import { generateTrack, PRE_ROLL, resetBlocks, TRACK_VERSION, type Track } from './track/track.ts';
 import { Hud, type Rival } from './ui/hud.ts';
 import { LobbyScreen } from './ui/lobby.ts';
-import { LobbyBrowser } from './ui/browser.ts';
 import { Menu } from './ui/menu.ts';
 import { Hangar } from './ui/hangar.ts';
 import { ProfileScreen } from './ui/profile.ts';
@@ -385,13 +384,9 @@ function joinLobby(code: string) {
   net.send({ type: 'join', code });
 }
 
-new LobbyBrowser({
-  join: joinLobby,
-  quick: () => queue('casual'),
-  create(visibility) {
-    if (!net.connected) return toast('Offline');
-    net.send({ type: 'create', visibility });
-  },
+$('private-create').addEventListener('click', () => {
+  if (!net.connected) return toast('Offline');
+  net.send({ type: 'create' });
 });
 
 const menu = new Menu({
@@ -475,9 +470,6 @@ const lobbyScreen = new LobbyScreen(
       const fallback = () => (settings().streamer ? toast("Couldn't copy the invite link") : prompt('Invite link', link));
       navigator.clipboard?.writeText(link).then(() => toast('Invite link copied'), fallback) ?? fallback();
     },
-    setVisibility(visibility) {
-      net.send({ type: 'visibility', visibility });
-    },
     submit(url) {
       lobbyScreen.submitError = '';
       net.send({ type: 'submit', url });
@@ -493,8 +485,8 @@ const lobbyScreen = new LobbyScreen(
       if (inMatch && !confirm('Leave the match? You will finish last.')) return;
       leaveLobby();
     },
-    again(mode) {
-      net.send({ type: 'queue', mode });
+    again(mode, isPrivate) {
+      net.send(isPrivate ? { type: 'create' } : { type: 'queue', mode });
     },
   },
   () => net.serverNow(),

@@ -7,7 +7,7 @@ import { topRuns } from './runs.ts';
 import { songData } from './tracks.ts';
 import { WebSocketServer } from 'ws';
 import * as db from './db.ts';
-import { onConnection, presence, publicLobbies, refreshPlayer } from './lobby.ts';
+import { onConnection, presence, refreshPlayer } from './lobby.ts';
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -160,9 +160,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const p = me();
     if (!p) return json(res, 401, { error: 'unknown pilot' });
     return json(res, 200, { games: db.history(p.id) });
-  }
-  if (url.pathname === '/api/lobbies') {
-    return json(res, 200, { lobbies: publicLobbies(), now: Date.now() });
   }
   if (url.pathname === '/api/leaderboard') {
     const p = me();
