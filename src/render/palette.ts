@@ -72,4 +72,8 @@ export const shared = {
   uFogNear: { value: 260 },
   uFogFar: { value: 900 },
   uBands: { value: new Float32Array(16) },
+  /** track ripples (see ./ripples.ts) */
+  uRipples: { value: new Float32Array(8 * 4) },
+  uRippleTime: { value: 0 },
+  uShimmer: { value: 0 },
 };

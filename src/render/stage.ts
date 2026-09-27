@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, newFrame, valueAt, type Block, type Track } from '../track/track.ts';
+import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, LANE_WIDTH, newFrame, sAtTime, valueAt, type Block, type Track } from '../track/track.ts';
+import { Ripples } from './ripples.ts';
 import type { RaceEvent, RaceSim } from '../game/sim.ts';
 import { BlockField } from './blocks.ts';
 import { Particles, Shockwaves, SpeedLines } from './effects.ts';
@@ -55,6 +56,8 @@ export class Stage {
   private bloomKick = 0;
   private nextDrop = 0;
   private lastBeatIdx = -1;
+  /** water ripples on the track surface, one per beat */
+  readonly ripples = new Ripples();
   private beatAge = 10;
   private beat = 0;
   private carry = new THREE.Vector3();
@@ -90,7 +93,12 @@ export class Stage {
    * panels) but at a lower internal resolution, leaving the browser room to stay snappy.
    */
   /** Graphics quality: internal resolution and bloom. */
+  /** Low quality skips the track ripples. */
+  private ripplesOn = true;
+
   setQuality(q: 'high' | 'medium' | 'low') {
+    this.ripplesOn = q !== 'low';
+    if (!this.ripplesOn) this.ripples.reset();
     const dpr = window.devicePixelRatio;
     this.basePixelRatio = q === 'high' ? Math.min(dpr, 1.5) : q === 'medium' ? 1 : 0.75;
     this.post.bloom.enabled = q !== 'low';
@@ -120,7 +128,7 @@ export class Stage {
     this.unload();
     this.track = track;
     this.trackMesh = new TrackMesh(track);
-    this.blocks = new BlockField(track);
+    this.blocks = new BlockField(track, this.ripples);
     this.trails = new TrailField(track);
     this.env = new Environment(track);
     this.scene.add(this.env.group, this.trackMesh.group, this.blocks.group, this.trails.mesh);
@@ -128,6 +136,7 @@ export class Stage {
     this.ship.addTo(this.scene);
     this.nextDrop = 0;
     this.lastBeatIdx = -1;
+    this.ripples.reset();
     this.particles.clear();
     // Compile every shader now rather than on first sight mid-ride (that is a visible hitch).
     this.renderer.compile(this.scene, this.camera);
@@ -233,7 +242,19 @@ export class Stage {
     let bi = this.lastBeatIdx;
     while (bi + 1 < beats.length && beats[bi + 1].time <= time) bi++;
     while (bi >= 0 && beats[bi].time > time) bi--;
-    if (bi !== this.lastBeatIdx && bi >= 0) this.lastBeatIdx = bi;
+    if (bi < this.lastBeatIdx) this.ripples.reset(); // seek / restart
+    if (bi !== this.lastBeatIdx && bi >= 0) {
+      // A stone drops just ahead of the ship on every beat; the bass sets the size of the rings.
+      const b = beats[bi];
+      if (this.ripplesOn && time - b.time < 0.3) {
+        const amp = Math.min(1.3, (0.4 + 0.9 * input.bass) * (0.55 + 0.6 * b.intensity) * (b.downbeat ? 1.25 : 1));
+        const x = [-0.8, 0.8, -0.35, 0.35][bi % 4] * LANE_WIDTH;
+        this.ripples.spawn(sAtTime(tr, b.time + 0.45), x, b.time, amp);
+      }
+      this.lastBeatIdx = bi;
+    }
+    this.ripples.time = time;
+    this.ripples.shimmer = !this.ripplesOn ? 0 : 0.12 * input.bass * valueAt(tr.intensity, indexAtTime(tr, time));
     this.beatAge = bi >= 0 ? time - beats[bi].time : 10;
     const downbeat = bi >= 0 && beats[bi].downbeat;
     // A soft swell rather than a strobe.
@@ -267,9 +288,13 @@ export class Stage {
     intensityColor(this.heat, shared.uHeat.value);
     if (overdrive) shared.uHeat.value.lerp(tmpColor.setHex(local.color), 0.35);
     shared.uBands.value.set(input.bands);
+    shared.uRipples.value.set(this.ripples.data);
+    shared.uRippleTime.value = this.ripples.time;
+    shared.uShimmer.value = this.ripples.shimmer;
 
     // --- ship ----------------------------------------------------------------------
     this.ship?.update(f0, local.x, local.vx, time, dt, {
+      lift: this.ripples.height(this.playerS, local.x),
       power: THREE.MathUtils.clamp((this.playerSpeed - 55) / 80, 0, 1),
       hurt: time - local.hurtAt < 0.6,
       bass: input.bass,

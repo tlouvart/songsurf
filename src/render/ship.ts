@@ -215,10 +215,11 @@ export class Ship {
   }
 
   /** Place on the track at frame `f`, lateral x, with velocity vx (for banking). */
-  update(f: Frame, x: number, vx: number, time: number, dt: number, opts: { power: number; hurt: boolean; bass: number; overdrive: boolean }) {
+  update(f: Frame, x: number, vx: number, time: number, dt: number, opts: { power: number; hurt: boolean; bass: number; overdrive: boolean; lift?: number }) {
     basis.makeBasis(ax.set(f.rx, f.ry, f.rz), ay.set(f.ux, f.uy, f.uz), az.set(-f.fx, -f.fy, -f.fz));
     this.root.quaternion.setFromRotationMatrix(basis);
-    const hover = 1.15 + Math.sin(time * 3.2) * 0.07 + opts.bass * 0.12;
+    // Rides the track's ripples (lift), plus a small idle bob.
+    const hover = 1.15 + (opts.lift ?? 0) + Math.sin(time * 3.2) * 0.07 + opts.bass * 0.12;
     this.root.position.set(f.px + f.rx * x + f.ux * hover, f.py + f.ry * x + f.uy * hover, f.pz + f.rz * x + f.uz * hover);
     this.animate(vx, time, dt, opts);
     this.root.updateMatrixWorld(true);

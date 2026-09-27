@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Ripples } from './ripples.ts';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { frameAtS, HALF_WIDTH, laneX, newFrame, type Block, type Frame, type Track } from '../track/track.ts';
@@ -189,7 +190,7 @@ export class BlockField {
   private firstBeat = 0;
   private disposables: { dispose(): void }[] = [];
 
-  constructor(private tr: Track) {
+  constructor(private tr: Track, private ripples: Ripples | null = null) {
     const blockMat = makeBlockMaterial;
     const noteGeo = new RoundedBoxGeometry(2.5, 1.4, 2.5, 3, 0.18);
     const mineGeo = mineGeometry();
@@ -247,28 +248,29 @@ export class BlockField {
     const drop = (1 - ease) * 26;
     const missed = b.resolved && rel < 0;
     const x = laneX(b.lane);
+    const lift = this.ripples ? this.ripples.height(b.s, x) : 0;
 
     if (b.kind === 'note' || b.kind === 'pellet') {
       const k = ease * (missed ? 0.7 : 1);
-      place(fr, x, 1.15 + drop, 0, sc.set(k, k, k), m4);
+      place(fr, x, 1.15 + lift + drop, 0, sc.set(k, k, k), m4);
       col.copy(TIER_COLORS[b.tier]);
       if (missed) col.multiplyScalar(0.25);
       push(this.notes, m4, col);
     } else if (b.kind === 'grey') {
       const k = ease * 1.25 * (missed ? 0.7 : 1);
-      place(fr, x, 2.0 + drop, 0.3, sc.set(k, k, k), m4);
+      place(fr, x, 2.0 + lift + drop, 0.3, sc.set(k, k, k), m4);
       col.copy(GREY_COLOR);
       if (missed) col.multiplyScalar(0.4);
       push(this.hazards, m4, col);
     } else {
       const k = ease * 1.1;
-      place(fr, x, 1.9 + drop, Math.PI / 4, sc.set(k, k, k), m4);
+      place(fr, x, 1.9 + lift + drop, Math.PI / 4, sc.set(k, k, k), m4);
       col.copy(GEM_COLOR);
       push(this.gems, m4, col);
     }
     // Light pool on the track under each block.
     const hs = (b.kind === 'gem' ? 9 : 5.5) * ease;
-    place(fr, x, 0.06, 0, sc.set(hs, 1, hs), m4);
+    place(fr, x, 0.06 + lift, 0, sc.set(hs, 1, hs), m4);
     col.copy(b.kind === 'grey' ? GREY_COLOR : b.kind === 'gem' ? GEM_COLOR : TIER_COLORS[b.tier]).multiplyScalar(missed ? 0.06 : b.kind === 'grey' ? 0.12 : 0.3);
     push(this.halos, m4, col);
   }

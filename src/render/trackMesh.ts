@@ -1,17 +1,20 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { HALF_WIDTH, LANES, type Track } from '../track/track.ts';
+import { frameAt, HALF_WIDTH, LANES, newFrame, valueAt, type Track } from '../track/track.ts';
 import { FOG_GLSL, PALETTE_GLSL, shared } from './palette.ts';
+import { RIPPLE_GLSL } from './ripples.ts';
 
 interface ProfilePoint { x: number; h: number; u: number }
 
 /** Sweep a 2D cross-section profile along the track's frames. */
-function sweep(tr: Track, profile: ProfilePoint[], stride = 1): THREE.BufferGeometry {
+function sweep(tr: Track, profile: ProfilePoint[], stride = 1, sub = 1): THREE.BufferGeometry {
+  if (sub > 1) return sweepFine(tr, profile, sub);
   const rows = Math.floor((tr.count - 1) / stride) + 1;
   const cols = profile.length;
   const pos = new Float32Array(rows * cols * 3);
   const uv = new Float32Array(rows * cols * 2);
   const heat = new Float32Array(rows * cols);
+  const upv = new Float32Array(rows * cols * 3);
   for (let r = 0; r < rows; r++) {
     const i = Math.min(tr.count - 1, r * stride);
     const j = i * 3;
@@ -24,6 +27,7 @@ function sweep(tr: Track, profile: ProfilePoint[], stride = 1): THREE.BufferGeom
       uv[(r * cols + c) * 2] = p.u;
       uv[(r * cols + c) * 2 + 1] = tr.s[i];
       heat[r * cols + c] = tr.intensity[i];
+      upv[o] = tr.up[j]; upv[o + 1] = tr.up[j + 1]; upv[o + 2] = tr.up[j + 2];
     }
   }
   const idx: number[] = [];
@@ -37,7 +41,50 @@ function sweep(tr: Track, profile: ProfilePoint[], stride = 1): THREE.BufferGeom
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aUv', new THREE.BufferAttribute(uv, 2));
   g.setAttribute('aHeat', new THREE.BufferAttribute(heat, 1));
+  g.setAttribute('aUp', new THREE.BufferAttribute(upv, 3));
   g.setIndex(idx);
+  return g;
+}
+
+/** Like sweep, with `sub` rows per track sample (interpolated frames): for the ripples. */
+function sweepFine(tr: Track, profile: ProfilePoint[], sub: number): THREE.BufferGeometry {
+  const rows = (tr.count - 1) * sub + 1;
+  const cols = profile.length;
+  const pos = new Float32Array(rows * cols * 3);
+  const upv = new Float32Array(rows * cols * 3);
+  const uv = new Float32Array(rows * cols * 2);
+  const heat = new Float32Array(rows * cols);
+  const f = newFrame();
+  for (let r = 0; r < rows; r++) {
+    const idx = r / sub;
+    frameAt(tr, idx, f);
+    const s = valueAt(tr.s, idx);
+    const h = valueAt(tr.intensity, idx);
+    for (let c = 0; c < cols; c++) {
+      const p = profile[c];
+      const k = r * cols + c;
+      pos[k * 3] = f.px + f.rx * p.x + f.ux * p.h;
+      pos[k * 3 + 1] = f.py + f.ry * p.x + f.uy * p.h;
+      pos[k * 3 + 2] = f.pz + f.rz * p.x + f.uz * p.h;
+      upv[k * 3] = f.ux; upv[k * 3 + 1] = f.uy; upv[k * 3 + 2] = f.uz;
+      uv[k * 2] = p.u;
+      uv[k * 2 + 1] = s;
+      heat[k] = h;
+    }
+  }
+  const idx: number[] = [];
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols - 1; c++) {
+      const a = r * cols + c, b = a + 1, d = a + cols, e = d + 1;
+      idx.push(a, d, b, b, d, e);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('aUv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('aHeat', new THREE.BufferAttribute(heat, 1));
+  g.setAttribute('aUp', new THREE.BufferAttribute(upv, 3));
+  g.setIndex(rows * cols > 65535 ? new THREE.Uint32BufferAttribute(idx, 1) : idx);
   return g;
 }
 
@@ -52,6 +99,29 @@ void main() {
   vUv = aUv;
   vHeat = aHeat;
   vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorld = wp.xyz;
+  vec4 mv = viewMatrix * wp;
+  vDist = -mv.z;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+/** The driving surface: moved by the ripples along the track's up vector. */
+const SURFACE_VERT = /* glsl */ `
+attribute vec2 aUv;
+attribute float aHeat;
+attribute vec3 aUp;
+varying vec2 vUv;
+varying float vHeat;
+varying float vDist;
+varying vec3 vWorld;
+${RIPPLE_GLSL}
+void main() {
+  vUv = aUv;
+  vHeat = aHeat;
+  float x = (aUv.x - 0.5) * ${(HALF_WIDTH * 2).toFixed(2)};
+  vec3 p = position + aUp * rippleHeight(aUv.y, x);
+  vec4 wp = modelMatrix * vec4(p, 1.0);
   vWorld = wp.xyz;
   vec4 mv = viewMatrix * wp;
   vDist = -mv.z;
@@ -86,6 +156,7 @@ float aaLine(float coord, float width) {
 
 const SURFACE_FRAG = /* glsl */ `
 ${HEADER}
+${RIPPLE_GLSL}
 void main() {
   float lanes = ${LANES.toFixed(1)};
   float lu = vUv.x * lanes;
@@ -131,6 +202,15 @@ void main() {
   // A faint reflection band of the heat colour.
   col += heat * 0.04 * (0.5 + 0.5 * sin(s * 0.05 + uTime * 0.7));
 
+  // Ripples catch the light: faces tilted back toward the camera glow, the others darken.
+  float rx = (vUv.x - 0.5) * ${(HALF_WIDTH * 2).toFixed(2)};
+  float rh = rippleHeight(s, rx);
+  float gs = (rippleHeight(s + 0.35, rx) - rh) / 0.35;
+  float gx = (rippleHeight(s, rx + 0.35) - rh) / 0.35;
+  float lit = clamp(-gs * 1.8 + gx * 0.4, -1.0, 1.0);
+  col += heat * (max(lit, 0.0) * 0.8 + max(rh, 0.0) * 0.45);
+  col *= 1.0 - max(-lit, 0.0) * 0.45;
+
   gl_FragColor = vec4(applyFog(col, vDist), 1.0);
 }
 `;
@@ -175,10 +255,9 @@ export class TrackMesh {
 
   constructor(tr: Track) {
     const HW = HALF_WIDTH;
-    const surface = sweep(tr, [
-      { x: -HW, h: 0, u: 0 },
-      { x: HW, h: 0, u: 1 },
-    ]);
+    // Enough columns across the width for the ripples to take shape.
+    const COLS = 15;
+    const surface = sweep(tr, Array.from({ length: COLS }, (_, c) => ({ x: -HW + (2 * HW * c) / (COLS - 1), h: 0, u: c / (COLS - 1) })), 1, 2);
     const C = 0.55; // curb width
     const body = sweep(tr, [
       { x: -HW, h: 0.02, u: 0.05 },
@@ -210,9 +289,9 @@ export class TrackMesh {
     const curtains = mergeGeometries([curtain, curtainR])!;
     this.geoms.push(surface, body, fences, curtains, fenceL, fenceR, curtain, curtainR);
 
-    const mat = (frag: string, extra: Partial<THREE.ShaderMaterialParameters> = {}, uniforms = {}) =>
+    const mat = (frag: string, extra: Partial<THREE.ShaderMaterialParameters> = {}, uniforms = {}, vert = COMMON_VERT) =>
       new THREE.ShaderMaterial({
-        vertexShader: COMMON_VERT,
+        vertexShader: vert,
         fragmentShader: frag,
         uniforms: { ...shared, ...uniforms },
         ...extra,
@@ -224,7 +303,7 @@ export class TrackMesh {
       mesh.renderOrder = order;
       this.group.add(mesh);
     };
-    add(surface, mat(SURFACE_FRAG, { side: THREE.DoubleSide }));
+    add(surface, mat(SURFACE_FRAG, { side: THREE.DoubleSide }, {}, SURFACE_VERT));
     add(body, mat(BODY_FRAG, { side: THREE.DoubleSide }));
     const additive = { transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide };
     add(fences, mat(GLOW_FRAG, additive, { uStrength: { value: 0.45 } }), 2);
