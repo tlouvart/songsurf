@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, LANE_WIDTH, newFrame, sAtTime, valueAt, type Block, type Track } from '../track/track.ts';
+import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, newFrame, sAtTime, valueAt, type Block, type Track } from '../track/track.ts';
 import { Ripples } from './ripples.ts';
 import type { RaceEvent, RaceSim } from '../game/sim.ts';
 import { BlockField } from './blocks.ts';
@@ -24,6 +24,7 @@ export interface FrameInput {
 const f0 = newFrame();
 const f1 = newFrame();
 const f2 = newFrame();
+const smooth01 = (u: number) => { const t = Math.min(1, Math.max(0, u)); return t * t * (3 - 2 * t); };
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
 const v3 = new THREE.Vector3();
@@ -244,17 +245,18 @@ export class Stage {
     while (bi >= 0 && beats[bi].time > time) bi--;
     if (bi < this.lastBeatIdx) this.ripples.reset(); // seek / restart
     if (bi !== this.lastBeatIdx && bi >= 0) {
-      // A stone drops just ahead of the ship on every beat; the bass sets the size of the rings.
+      // Only a steady kick / bassline makes the surface swell, once per pulse (every other
+      // beat in fast songs, so it grooves rather than buzzes). Quiet or pulse-less parts stay calm.
       const b = beats[bi];
-      if (this.ripplesOn && time - b.time < 0.3) {
-        const amp = Math.min(1.3, (0.4 + 0.9 * input.bass) * (0.55 + 0.6 * b.intensity) * (b.downbeat ? 1.25 : 1));
-        const x = [-0.8, 0.8, -0.35, 0.35][bi % 4] * LANE_WIDTH;
-        this.ripples.spawn(sAtTime(tr, b.time + 0.45), x, b.time, amp);
+      const groove = smooth01((b.pulse - 0.3) / 0.3) * smooth01((b.intensity - 0.2) / 0.3);
+      const onPulse = tr.bpm <= 135 || bi % 2 === 0;
+      if (this.ripplesOn && onPulse && groove > 0 && time - b.time < 0.3) {
+        const amp = 0.3 * groove * (0.55 + 0.45 * b.kick) * (b.downbeat ? 1.15 : 1);
+        this.ripples.spawn(sAtTime(tr, b.time + 0.5), 0, b.time, amp);
       }
       this.lastBeatIdx = bi;
     }
     this.ripples.time = time;
-    this.ripples.shimmer = !this.ripplesOn ? 0 : 0.12 * input.bass * valueAt(tr.intensity, indexAtTime(tr, time));
     this.beatAge = bi >= 0 ? time - beats[bi].time : 10;
     const downbeat = bi >= 0 && beats[bi].downbeat;
     // A soft swell rather than a strobe.
@@ -290,11 +292,10 @@ export class Stage {
     shared.uBands.value.set(input.bands);
     shared.uRipples.value.set(this.ripples.data);
     shared.uRippleTime.value = this.ripples.time;
-    shared.uShimmer.value = this.ripples.shimmer;
 
     // --- ship ----------------------------------------------------------------------
     this.ship?.update(f0, local.x, local.vx, time, dt, {
-      lift: this.ripples.height(this.playerS, local.x),
+      lift: this.ripples.height(this.playerS, local.x) * 0.7,
       power: THREE.MathUtils.clamp((this.playerSpeed - 55) / 80, 0, 1),
       hurt: time - local.hurtAt < 0.6,
       bass: input.bass,

@@ -73,6 +73,10 @@ export interface BeatMark {
   s: number;
   downbeat: boolean;
   intensity: number;
+  /** 0..1: how hard the bass hits on this beat (kick / bassline) */
+  kick: number;
+  /** 0..1: how steady that bass pulse is around this beat (a groove, not a one-off hit) */
+  pulse: number;
 }
 
 export interface TrackElement {
@@ -421,7 +425,27 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
       s: sAtTime(track, t),
       downbeat: (i - a.downbeatPhase) % 4 === 0,
       intensity: intensity[Math.round(indexAtTime(track, t))],
+      kick: 0,
+      pulse: 0,
     }));
+  // Bass pulse: how much the low band jumps on each beat compared with its surroundings,
+  // and how steadily it does so over the neighbouring beats (a kick or a bassline groove).
+  {
+    const low = (t: number) => sampleFeature(a.low, a.fps, clamp(t, 0, a.duration));
+    const raw = track.beats.map((b) => {
+      let peak = 0, avg = 0, n = 0;
+      for (let d = -0.03; d <= 0.07; d += 0.01) peak = Math.max(peak, low(b.time + d));
+      for (let d = -0.3; d <= 0.3; d += 0.02) { avg += low(b.time + d); n++; }
+      return Math.max(0, peak - avg / n);
+    });
+    const ref = [...raw].sort((p, q) => p - q)[Math.floor(raw.length * 0.9)] || 1;
+    track.beats.forEach((b, i) => (b.kick = clamp(raw[i] / ref, 0, 1)));
+    track.beats.forEach((b, i) => {
+      let sum = 0, n = 0;
+      for (let k = Math.max(0, i - 4); k <= Math.min(track.beats.length - 1, i + 4); k++) { sum += track.beats[k].kick; n++; }
+      b.pulse = sum / n;
+    });
+  }
   track.drops = a.drops.map((t) => ({ time: t, s: sAtTime(track, t) }));
   const placed = placeBlocks(a, track, rng);
   track.blocks = placed.blocks;

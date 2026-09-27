@@ -1,25 +1,23 @@
 import { HALF_WIDTH } from '../track/track.ts';
 
 /**
- * Water-like ripples on the track surface: every beat drops a "stone" just ahead of the
- * ship and rings spread out from it, sized by the bass; a light shimmer rides the bassline in
- * between. Purely visual: the track's path (and so the gameplay) never changes. The same
+ * Water-like ripples on the track surface: when the song has a steady kick or bassline, each
+ * pulse sends one soft swell rolling out from just ahead of the ship. Purely visual: the track's path (and so the gameplay) never changes. The same
  * formula runs in the surface shader and here, so the ship and blocks ride the water.
  */
 
 export const MAX_RIPPLES = 8;
 /** ring wavelength, spreading speed and packet width (world units) */
-const K = (2 * Math.PI) / 9;
-const SPEED = 30;
-const WIDTH = 15;
-const DECAY = 1.1;
+const K = (2 * Math.PI) / 14;
+const SPEED = 34;
+const WIDTH = 8;
+const DECAY = 1.8;
 const EDGE0 = HALF_WIDTH - 3.5;
 const EDGE1 = HALF_WIDTH - 0.2;
 
 export const RIPPLE_GLSL = /* glsl */ `
 uniform vec4 uRipples[${MAX_RIPPLES}];
 uniform float uRippleTime;
-uniform float uShimmer;
 float rippleHeight(float s, float x) {
   float h = 0.0;
   for (int k = 0; k < ${MAX_RIPPLES}; k++) {
@@ -32,7 +30,6 @@ float rippleHeight(float s, float x) {
     float env = r.w * exp(-age * ${DECAY.toFixed(2)}) * smoothstep(0.0, 0.08, age) / (1.0 + d * 0.03);
     h += env * exp(-(front * front) / ${(WIDTH * WIDTH).toFixed(1)}) * sin(front * ${K.toFixed(4)});
   }
-  h += uShimmer * sin(s * 0.9 - uRippleTime * 7.0) * sin(x * 1.1 + uRippleTime * 2.3);
   return h * (1.0 - smoothstep(${EDGE0.toFixed(2)}, ${EDGE1.toFixed(2)}, abs(x)));
 }
 `;
@@ -46,7 +43,6 @@ export class Ripples {
   /** per ripple: s, x, start time, amplitude (the shader's uRipples) */
   readonly data = new Float32Array(MAX_RIPPLES * 4);
   time = 0;
-  shimmer = 0;
   private next = 0;
 
   reset() {
@@ -77,7 +73,6 @@ export class Ripples {
       const env = (amp * Math.exp(-age * DECAY) * smoothstep(0, 0.08, age)) / (1 + d * 0.03);
       h += env * Math.exp(-(front * front) / (WIDTH * WIDTH)) * Math.sin(front * K);
     }
-    h += this.shimmer * Math.sin(s * 0.9 - this.time * 7) * Math.sin(x * 1.1 + this.time * 2.3);
     return h * (1 - smoothstep(EDGE0, EDGE1, Math.abs(x)));
   }
 }

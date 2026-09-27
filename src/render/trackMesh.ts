@@ -202,14 +202,10 @@ void main() {
   // A faint reflection band of the heat colour.
   col += heat * 0.04 * (0.5 + 0.5 * sin(s * 0.05 + uTime * 0.7));
 
-  // Ripples catch the light: faces tilted back toward the camera glow, the others darken.
+  // The swell catches a little light as it rolls by: a hint, not a flash.
   float rx = (vUv.x - 0.5) * ${(HALF_WIDTH * 2).toFixed(2)};
-  float rh = rippleHeight(s, rx);
-  float gs = (rippleHeight(s + 0.35, rx) - rh) / 0.35;
-  float gx = (rippleHeight(s, rx + 0.35) - rh) / 0.35;
-  float lit = clamp(-gs * 1.8 + gx * 0.4, -1.0, 1.0);
-  col += heat * (max(lit, 0.0) * 0.8 + max(rh, 0.0) * 0.45);
-  col *= 1.0 - max(-lit, 0.0) * 0.45;
+  float gs = rippleHeight(s + 0.5, rx) - rippleHeight(s - 0.5, rx);
+  col += heat * clamp(-gs * 0.5, 0.0, 0.12);
 
   gl_FragColor = vec4(applyFog(col, vDist), 1.0);
 }

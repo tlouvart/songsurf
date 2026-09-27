@@ -75,5 +75,4 @@ export const shared = {
   /** track ripples (see ./ripples.ts) */
   uRipples: { value: new Float32Array(8 * 4) },
   uRippleTime: { value: 0 },
-  uShimmer: { value: 0 },
 };
