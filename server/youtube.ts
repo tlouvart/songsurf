@@ -72,9 +72,12 @@ function run(args: string[], timeoutMs: number): Promise<string> {
       clearTimeout(timer);
       if (code === 0) return resolve(out);
       const msg = err.split('\n').filter((l) => l.includes('ERROR') || l.includes('error:')).join(' ') || `yt-dlp exited with ${code}`;
-      if (/403|no such option|Sign in to confirm/i.test(msg)) {
-        reject(new Error(`${msg} — your yt-dlp is probably outdated; run \`npm run setup\` to fetch the latest one`));
-      } else reject(new Error(msg));
+      // The details are for the server log; players get a short, useful message.
+      console.warn(`yt-dlp: ${msg}`);
+      if (/Sign in to confirm|403/i.test(msg)) reject(new Error('YouTube is refusing our server right now. Try again in a moment, or another song'));
+      else if (/unavailable|private video|removed/i.test(msg)) reject(new Error('This video is unavailable'));
+      else if (/no such option/i.test(msg)) reject(new Error('The server needs a yt-dlp update'));
+      else reject(new Error("Couldn't get this song from YouTube"));
     });
   });
 }
