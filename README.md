@@ -108,7 +108,9 @@ docker compose up -d --build
 
 The container runs as a non-root user on a read-only filesystem with all capabilities dropped. The database, the audio cache and yt-dlp (which updates itself daily) live in the `songsurf-data` volume. By default it only listens on the Docker bridge (`172.17.0.1:3400`); put a TLS reverse proxy in front. `deploy/nginx-songsurf.conf` is the one used for songsurf.io, behind Cloudflare, and only accepts Cloudflare's addresses.
 
-Server settings (environment): `PORT`, `HOST`, `PUBLIC_ORIGIN` (the only origin allowed to open lobby sockets), `TRUST_PROXY=1` (take the client address from `CF-Connecting-IP` / `X-Real-IP`, only behind a proxy you control), `AUDIO_CACHE_MB` (audio cache budget, 3000 by default), `YTDLP_PATH`.
+Server settings (environment): `PORT`, `HOST`, `PUBLIC_ORIGIN` (the only origin allowed to open lobby sockets), `TRUST_PROXY=1` (take the client address from `CF-Connecting-IP` / `X-Real-IP`, only behind a proxy you control), `AUDIO_CACHE_MB` (audio cache budget, 3000 by default), `YTDLP_PATH`, `YTDLP_PROXY` (a proxy for yt-dlp only).
+
+YouTube refuses most datacenter IPs ("Sign in to confirm you're not a bot"). The compose stack therefore includes `warp`, a small sidecar that tunnels yt-dlp's traffic, and nothing else, through Cloudflare WARP (userspace WireGuard exposed as SOCKS5 on the stack's private network, no privileges). Its WARP account is created on first start and lives in the `warp-data` volume. Set `YTDLP_PROXY=` (empty) in `deploy/.env` to go direct.
 
 The server rate-limits per client address (API calls, sign-ups, YouTube lookups, recorded runs, socket connections and messages), caps concurrent yt-dlp jobs, and sends a strict content security policy.
 

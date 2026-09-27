@@ -27,6 +27,8 @@ const LOCAL_BIN = join(process.cwd(), '.cache', 'bin', process.platform === 'win
 const YTDLP = process.env.YTDLP_PATH || (existsSync(LOCAL_BIN) ? LOCAL_BIN : 'yt-dlp');
 // YouTube requires solving JS challenges; the Node running this server does the job.
 const BASE_ARGS = ['--js-runtimes', `node:${process.execPath}`, '--no-warnings'];
+// YouTube blocks most datacenter IPs: in production yt-dlp goes out through a proxy.
+if (process.env.YTDLP_PROXY) BASE_ARGS.push('--proxy', process.env.YTDLP_PROXY);
 
 /** Pull the 11-char video id out of any common YouTube URL shape (or a bare id). */
 export function parseVideoId(input: string): string | null {

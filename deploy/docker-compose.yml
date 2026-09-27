@@ -17,6 +17,8 @@ services:
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://songsurf.io}
       AUDIO_CACHE_MB: ${AUDIO_CACHE_MB:-3000}
       XDG_CACHE_HOME: /tmp/xdg
+      # yt-dlp goes out through the WARP sidecar (YouTube blocks datacenter IPs).
+      YTDLP_PROXY: ${YTDLP_PROXY-socks5://warp:40000}
     ports:
       - "${BIND_ADDR:-172.17.0.1}:${BIND_PORT:-3400}:8787"
     volumes:
@@ -37,5 +39,33 @@ services:
         max-size: 10m
         max-file: "3"
 
+    depends_on:
+      - warp
+
+  warp:
+    build:
+      context: warp
+    image: songsurf-warp:latest
+    container_name: songsurf-warp
+    restart: unless-stopped
+    # Reachable only by the game container, on the stack's private network.
+    expose:
+      - "40000"
+    volumes:
+      - warp-data:/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: 5m
+        max-file: "2"
+
 volumes:
   songsurf-data:
+  warp-data:
