@@ -106,3 +106,22 @@ export async function addFriend(name: string): Promise<Friend[]> {
 export async function removeFriend(id: number): Promise<Friend[]> {
   return (await call<{ friends: Friend[] }>(`/api/friends?id=${id}`, { method: 'DELETE' })).friends;
 }
+
+export interface LibrarySong {
+  song_key: string;
+  title: string;
+  artist: string;
+  added_at: number;
+  last_at: number;
+  plays: number;
+  best: number | null;
+}
+
+/** Your songs: everything you loaded or raced. */
+export async function library(): Promise<LibrarySong[]> {
+  return (await call<{ songs: LibrarySong[] }>('/api/library')).songs;
+}
+
+export async function removeFromLibrary(key: string): Promise<LibrarySong[]> {
+  return (await call<{ songs: LibrarySong[] }>(`/api/library?key=${encodeURIComponent(key)}`, { method: 'DELETE' })).songs;
+}

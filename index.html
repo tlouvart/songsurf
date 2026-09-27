@@ -57,6 +57,7 @@
         <button class="hangar-btn" id="hangar-open" title="Hangar"><img id="hangar-thumb" alt="" /><span>Hangar</span></button>
         <button class="top-btn" id="lb-open" title="Leaderboard">🏆</button>
         <button class="top-btn" id="settings-open" title="Settings">⚙</button>
+        <button class="top-btn fs-btn" id="fullscreen-btn" title="Fullscreen (F)">⛶</button>
         <button class="profile-chip" id="profile-chip" title="Change your pilot name">
           <span class="avatar" id="me-avatar">?</span>
           <span class="me-name" id="me-name">Pilot</span>
@@ -81,6 +82,7 @@
               <div class="mode-row">
                 <button class="btn ghost small" id="btn-demo">▶ Demo track</button>
                 <label class="btn ghost small" for="file-input">♫ Audio file</label>
+                <button class="btn ghost small" id="library-open">☰ Library</button>
                 <input id="file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.webm" hidden />
               </div>
               <p class="server-note hidden" id="server-note">YouTube unavailable on this server</p>
@@ -209,6 +211,22 @@
       </div>
     </section>
 
+    <!-- Your songs -->
+    <section id="library" class="overlay hidden">
+      <div class="panel-wrap">
+        <header class="panel-head"><h2>Library</h2><button class="icon-btn" id="library-close">✕</button></header>
+        <div class="lib-bar">
+          <input id="lib-search" type="search" placeholder="Search your songs" spellcheck="false" autocomplete="off" />
+          <div class="seg" id="lib-sort">
+            <button class="seg-btn active" data-sort="recent">Recent</button>
+            <button class="seg-btn" data-sort="plays">Most played</button>
+            <button class="seg-btn" data-sort="best">Best score</button>
+          </div>
+        </div>
+        <ul class="lib-list" id="lib-list"></ul>
+      </div>
+    </section>
+
     <!-- About: credits and fair play -->
     <section id="about" class="overlay hidden">
       <div class="panel-wrap small about">
@@ -327,6 +345,7 @@
         <h2 id="pause-title">PAUSED</h2>
         <button class="btn primary" id="btn-resume">Resume</button>
         <button class="btn ghost" id="btn-restart">Restart</button>
+        <button class="btn ghost fs-btn" id="btn-fullscreen">Fullscreen</button>
         <button class="btn ghost" id="btn-quit">Quit to menu</button>
       </div>
     </section>

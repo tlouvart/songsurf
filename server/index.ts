@@ -161,6 +161,12 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!p) return json(res, 401, { error: 'unknown pilot' });
     return json(res, 200, { games: db.history(p.id) });
   }
+  if (url.pathname === '/api/library') {
+    const p = me();
+    if (!p) return json(res, 401, { error: 'unknown pilot' });
+    if (req.method === 'DELETE') db.removeFromLibrary(p.id, url.searchParams.get('key') ?? '');
+    return json(res, 200, { songs: db.library(p.id) });
+  }
   if (url.pathname === '/api/leaderboard') {
     const p = me();
     return json(res, 200, { players: db.leaderboard(), me: p ? { player: p, rank: db.rankOf(p) } : null });

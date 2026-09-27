@@ -35,6 +35,9 @@ setInterval(() => {
   for (const [id, r] of runs) if (Date.now() - r.startedAt > 30 * 60_000) runs.delete(id);
 }, 60_000).unref();
 
+const songInfo = (key: string) =>
+  key === DEMO_KEY ? Promise.resolve({ title: 'Neon Drive', uploader: 'SongSurf synth' }) : getInfo(key.slice(3)).catch(() => null);
+
 const send = (ws: WebSocket, msg: ServerMsg) => ws.readyState === 1 && ws.send(JSON.stringify(msg));
 
 function feed(run: SoloRun, chunk: unknown) {
@@ -74,6 +77,8 @@ export async function onSolo(ws: WebSocket, player: db.Player, msg: SoloMsg) {
       },
     );
     runs.set(player.id, run);
+    // Every song you start goes into your library.
+    songInfo(key).then((info) => db.addToLibrary(player.id, key, info?.title ?? '', info?.uploader ?? ''));
     return;
   }
   const run = runs.get(player.id);
@@ -102,7 +107,7 @@ export async function onSolo(ws: WebSocket, player: db.Player, msg: SoloMsg) {
       if (reason || !v) return send(ws, { type: 'soloResult', verified: false, reason: reason ?? 'not verified' });
 
       const score = v.score;
-      const info = run.key === DEMO_KEY ? { title: 'Neon Drive', uploader: 'SongSurf synth' } : await getInfo(run.key.slice(3)).catch(() => null);
+      const info = await songInfo(run.key);
       db.recordGame({
         player_id: player.id, mode: 'solo', song_key: run.key, song_title: info?.title ?? '', song_artist: info?.uploader ?? '', score,
       });

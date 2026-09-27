@@ -15,6 +15,7 @@ import { Stage } from './render/stage.ts';
 import { generateTrack, PRE_ROLL, resetBlocks, TRACK_VERSION, type Track } from './track/track.ts';
 import { Hud, type Rival } from './ui/hud.ts';
 import { LobbyScreen } from './ui/lobby.ts';
+import { Library } from './ui/library.ts';
 import { Menu } from './ui/menu.ts';
 import { Hangar } from './ui/hangar.ts';
 import { ProfileScreen } from './ui/profile.ts';
@@ -384,6 +385,27 @@ function joinLobby(code: string) {
   net.send({ type: 'join', code });
 }
 
+new Library((key, title) => load(title, (st) => loadByKey(key, st)));
+
+// Fullscreen: top bar button, pause menu, or F.
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => toast("Fullscreen isn't available here"));
+}
+for (const id of ['fullscreen-btn', 'btn-fullscreen']) $(id).addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', () => {
+  const on = !!document.fullscreenElement;
+  $('fullscreen-btn').textContent = on ? '🗗' : '⛶';
+  $('fullscreen-btn').title = on ? 'Exit fullscreen (F)' : 'Fullscreen (F)';
+  $('btn-fullscreen').textContent = on ? 'Exit fullscreen' : 'Fullscreen';
+});
+// Browsers without it (iPhone Safari) don't get the buttons.
+if (!document.fullscreenEnabled) document.querySelectorAll('.fs-btn').forEach((b) => b.classList.add('hidden'));
+window.addEventListener('keydown', (e) => {
+  const t = e.target as HTMLElement;
+  if (e.key.toLowerCase() === 'f' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') toggleFullscreen();
+});
+
 $('private-create').addEventListener('click', () => {
   if (!net.connected) return toast('Offline');
   net.send({ type: 'create' });
@@ -689,7 +711,7 @@ menu.setOnline(false);
 let last = performance.now();
 const OVERLAYS = ['menu', 'lobby', 'results', 'loading'].map((id) => $(id));
 /** Full-screen views with their own 3D preview: the game scene can stop rendering. */
-const OPAQUE = ['hangar', 'ship-modal', 'profile', 'leaderboard'].map((id) => $(id));
+const OPAQUE = ['hangar', 'ship-modal', 'profile', 'leaderboard', 'library'].map((id) => $(id));
 const fpsEl = $('fps');
 let fpsFrames = 0;
 let fpsSince = performance.now();

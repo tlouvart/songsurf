@@ -57,7 +57,21 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS games_player ON games (player_id, created_at DESC);
+  -- Each pilot's song library: every song they loaded or raced (hidden = removed by them).
+  CREATE TABLE IF NOT EXISTS library (
+    player_id INTEGER NOT NULL,
+    song_key TEXT NOT NULL,
+    title TEXT NOT NULL,
+    artist TEXT NOT NULL DEFAULT '',
+    added_at INTEGER NOT NULL,
+    last_at INTEGER NOT NULL,
+    hidden INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (player_id, song_key)
+  );
 `);
+// Songs raced before the library existed.
+db.exec(`INSERT OR IGNORE INTO library (player_id, song_key, title, artist, added_at, last_at)
+  SELECT player_id, song_key, song_title, song_artist, MIN(created_at), MAX(created_at) FROM games GROUP BY player_id, song_key`);
 // Migrations for databases created by earlier versions.
 const columns = (db.prepare('PRAGMA table_info(players)').all() as unknown as { name: string }[]).map((c) => c.name);
 if (!columns.includes('loadout')) db.exec('ALTER TABLE players ADD COLUMN loadout TEXT');
@@ -262,6 +276,48 @@ export function recordGame(g: GameRow) {
     g.player_id, g.mode, g.match_id ?? null, g.song_key, g.song_title.slice(0, 200), (g.song_artist ?? '').slice(0, 120),
     Math.round(g.score), g.placement ?? null, g.players ?? null, g.points ?? null, g.rating_delta ?? null, Date.now(),
   );
+  addToLibrary(g.player_id, g.song_key, g.song_title, g.song_artist ?? '');
+}
+
+// ---------------------------------------------------------------------------
+// Library
+// ---------------------------------------------------------------------------
+
+/** Add a song to a pilot's library (or bring it back and bump it to the top). */
+export function addToLibrary(playerId: number, key: string, title: string, artist: string) {
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO library (player_id, song_key, title, artist, added_at, last_at) VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT (player_id, song_key) DO UPDATE SET last_at = excluded.last_at, hidden = 0,
+       title = CASE WHEN excluded.title <> '' THEN excluded.title ELSE title END,
+       artist = CASE WHEN excluded.artist <> '' THEN excluded.artist ELSE artist END`,
+  ).run(playerId, key.slice(0, 200), title.slice(0, 200), artist.slice(0, 120), now, now);
+}
+
+export interface LibrarySong {
+  song_key: string;
+  title: string;
+  artist: string;
+  added_at: number;
+  last_at: number;
+  plays: number;
+  best: number | null;
+}
+
+/** A pilot's songs, with how often they raced each one and their best score. */
+export function library(playerId: number): LibrarySong[] {
+  return db
+    .prepare(
+      `SELECT l.song_key, l.title, l.artist, l.added_at, l.last_at, COUNT(g.id) AS plays, MAX(g.score) AS best
+       FROM library l LEFT JOIN games g ON g.player_id = l.player_id AND g.song_key = l.song_key
+       WHERE l.player_id = ? AND l.hidden = 0
+       GROUP BY l.song_key ORDER BY l.last_at DESC LIMIT 500`,
+    )
+    .all(playerId) as unknown as LibrarySong[];
+}
+
+export function removeFromLibrary(playerId: number, key: string) {
+  db.prepare('UPDATE library SET hidden = 1 WHERE player_id = ? AND song_key = ?').run(playerId, key);
 }
 
 export function history(id: number, limit = 60) {

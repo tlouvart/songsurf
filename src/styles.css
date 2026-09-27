@@ -782,3 +782,29 @@ kbd {
 .about .menu-row { justify-content: flex-start; }
 
 #code-input.masked { -webkit-text-security: disc; text-security: disc; }
+
+/* Library */
+#library { background: rgba(5, 2, 13, 0.88); z-index: 22; }
+.lib-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.lib-bar input {
+  flex: 1; min-width: 180px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px;
+  color: var(--ink); font: inherit; font-size: 16px; padding: 10px 14px; outline: none;
+}
+.lib-bar input:focus { border-color: var(--cyan); }
+.lib-bar .seg { margin: 0; width: 330px; max-width: 100%; }
+.lib-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 62vh; overflow-y: auto; }
+.lib-list li { display: flex; align-items: center; gap: 14px; padding: 8px 12px 8px 8px; border-radius: 12px; background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.07); }
+.lib-list li:hover { border-color: rgba(51, 225, 255, 0.35); }
+.lib-list li.empty { justify-content: center; color: var(--dim); padding: 28px; background: none; border-style: dashed; }
+.lib-list img, .lib-art { width: 96px; height: 54px; border-radius: 8px; object-fit: cover; flex: none; background: rgba(255, 255, 255, 0.06); }
+.lib-art { display: grid; place-items: center; font-size: 22px; color: var(--cyan); }
+.lib-list .grow { flex: 1; min-width: 0; }
+.lib-list .title { font-weight: 700; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-list .meta { color: var(--dim); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-best { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.1; min-width: 70px; }
+.lib-best b { font-family: var(--display); color: var(--gold); font-size: 15px; }
+.lib-best small { color: var(--dim); font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
+@media (max-width: 640px) {
+  .lib-list img, .lib-art { width: 64px; height: 36px; }
+  .lib-best { display: none; }
+}
