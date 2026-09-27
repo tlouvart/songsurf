@@ -1,0 +1,11 @@
+node_modules
+dist
+.cache
+.git
+*.log
+.env
+.env.*
+*.pem
+*.key
+deploy/*
+!deploy/entrypoint.sh

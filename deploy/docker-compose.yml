@@ -1,0 +1,41 @@
+# Production stack for songsurf.io. The container only listens on the Docker bridge address;
+# the public entry point is the nginx proxy (TLS, Cloudflare-only allow-list, rate limits).
+name: songsurf
+services:
+  songsurf:
+    build:
+      context: ..
+    image: songsurf:latest
+    container_name: songsurf
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://songsurf.io}
+      AUDIO_CACHE_MB: ${AUDIO_CACHE_MB:-3000}
+      XDG_CACHE_HOME: /tmp/xdg
+    ports:
+      - "${BIND_ADDR:-172.17.0.1}:${BIND_PORT:-3400}:8787"
+    volumes:
+      - songsurf-data:/app/.cache
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,exec
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1536m
+    cpus: 2
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  songsurf-data:

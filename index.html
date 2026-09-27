@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#05020d" />
+    <meta name="description" content="SongSurf — paste a YouTube link, ride the song. An open-source, multiplayer music racer for the web." />
+    <link rel="canonical" href="https://songsurf.io/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://songsurf.io/" />
+    <meta property="og:title" content="SongSurf" />
+    <meta property="og:description" content="Paste a YouTube link and ride it, solo or against friends." />
+    <meta name="twitter:card" content="summary" />
+    <title>SongSurf</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Fonts (display=swap keeps text visible while they load) -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+    <!-- Styles in the head, so the page never shows unstyled -->
+    <link rel="stylesheet" href="/src/styles.css" />
+    <style>html,body{background:#05020d;color:#f4f0ff;margin:0}</style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <!-- In-race HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-song">
+        <div class="song-title" id="hud-title"></div>
+        <div class="song-artist" id="hud-artist"></div>
+        <canvas id="hud-progress" width="600" height="60"></canvas>
+      </div>
+      <div class="hud-score">
+        <div class="score" id="hud-score">0</div>
+        <div class="score-row"><span class="combo" id="hud-combo"></span><span class="mult" id="hud-mult">x1</span></div>
+        <div class="best" id="hud-best"></div>
+        <div class="pace" id="hud-pace"></div>
+        <div class="od">
+          <div class="od-fill" id="hud-od"></div>
+          <span class="od-label" id="hud-od-label">OVERDRIVE</span>
+        </div>
+        <ol id="board"></ol>
+      </div>
+      <div id="tags"></div>
+      <div id="popups"></div>
+      <div id="banner"></div>
+      <div id="countdown"></div>
+      <div class="hud-hint" id="hud-hint">← → / A D / mouse · SPACE overdrive · ESC pause</div>
+    </div>
+
+    <!-- Main menu -->
+    <section id="menu" class="overlay">
+      <header class="topbar">
+        <div class="brand">SONG<span>SURF</span></div>
+        <div class="net-status" id="net-status"></div>
+        <button class="hangar-btn" id="hangar-open" title="Hangar"><img id="hangar-thumb" alt="" /><span>Hangar</span></button>
+        <button class="top-btn" id="lb-open" title="Leaderboard">🏆</button>
+        <button class="top-btn" id="settings-open" title="Settings">⚙</button>
+        <button class="profile-chip" id="profile-chip" title="Change your pilot name">
+          <span class="avatar" id="me-avatar">?</span>
+          <span class="me-name" id="me-name">Pilot</span>
+          <span class="me-stat"><small>ELO</small><b id="me-elo">1000</b></span>
+          <span class="me-stat credits-stat"><small>◈</small><b id="me-credits">0</b></span>
+        </button>
+      </header>
+
+      <div class="menu-layout">
+        <main class="menu-main">
+          <div class="hero">
+            <h1 class="logo" data-text="SONGSURF">SONGSURF</h1>
+          </div>
+
+          <div class="modes">
+            <article class="mode-card solo">
+              <div class="mode-head"><span class="mode-icon">◆</span><div><h2>Solo</h2><p>Any song</p></div></div>
+              <form id="yt-form" class="yt-form" autocomplete="off">
+                <input id="yt-url" type="text" inputmode="url" placeholder="YouTube link" spellcheck="false" />
+                <button type="submit" class="btn primary">RIDE</button>
+              </form>
+              <div class="mode-row">
+                <button class="btn ghost small" id="btn-demo">▶ Demo track</button>
+                <label class="btn ghost small" for="file-input">♫ Audio file</label>
+                <input id="file-input" type="file" accept="audio/*,.mp3,.m4a,.ogg,.wav,.flac,.webm" hidden />
+              </div>
+              <p class="server-note hidden" id="server-note">YouTube unavailable on this server</p>
+            </article>
+
+            <article class="mode-card ranked">
+              <div class="mode-head"><span class="mode-icon">♛</span><div><h2>Ranked</h2><p>Up to 8 · 3 rounds · Elo</p></div></div>
+              <button class="btn primary wide" data-queue="ranked">Find match</button>
+              <div class="lock-note hidden" id="ranked-lock"></div>
+            </article>
+
+            <article class="mode-card casual">
+              <div class="mode-head"><span class="mode-icon">✦</span><div><h2>Casual</h2><p>Up to 8 · 3 rounds</p></div></div>
+              <button class="btn ghost wide" data-queue="casual">Find match</button>
+            </article>
+          </div>
+
+          <div class="friends-row">
+            <span class="fr-label">Play with friends</span>
+            <form class="code-form" id="code-form" autocomplete="off">
+              <input id="code-input" type="text" maxlength="5" placeholder="CODE" spellcheck="false" autocapitalize="characters" />
+              <button class="btn primary small" type="submit">Join</button>
+            </form>
+          </div>
+
+          <div class="keys">
+            <span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> / mouse steer</span>
+            <span><kbd>1</kbd>–<kbd>5</kbd> jump to lane</span>
+            <span><kbd>Space</kbd> overdrive</span>
+            <span><kbd>Esc</kbd> pause</span>
+          </div>
+        </main>
+
+        <aside class="side">
+          <nav class="tabs">
+            <button class="tab active" data-tab="friends">Friends</button>
+            <button class="tab" data-tab="ranking">Top pilots</button>
+          </nav>
+          <div class="tab-panel" id="tab-friends">
+            <form class="inline-form" id="friend-form" autocomplete="off">
+              <input id="friend-name" type="text" placeholder="Add friend by name" maxlength="16" spellcheck="false" />
+              <button class="btn ghost small" type="submit">Add</button>
+            </form>
+            <ul class="list" id="friend-list"></ul>
+          </div>
+          <div class="tab-panel hidden" id="tab-ranking">
+            <ol class="list ranking" id="ranking-list"></ol>
+            <button class="btn ghost small wide" id="ranking-all">Leaderboard</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Profile & settings -->
+    <section id="profile" class="overlay hidden">
+      <div class="panel-wrap">
+        <header class="panel-head">
+          <nav class="tabs inline">
+            <button class="tab active" data-ptab="profile">Profile</button>
+            <button class="tab" data-ptab="settings">Settings</button>
+          </nav>
+          <button class="icon-btn" id="profile-close">✕</button>
+        </header>
+        <div class="ptab" id="ptab-profile">
+          <div class="profile-top">
+            <img class="pf-ship" id="pf-ship" alt="" />
+            <div class="pf-id">
+              <form class="inline-form" id="rename-form" autocomplete="off">
+                <input id="rename-input" type="text" maxlength="16" spellcheck="false" />
+                <button class="btn ghost small" type="submit">Rename</button>
+              </form>
+              <div class="modal-error" id="rename-error"></div>
+              <div class="pf-stats" id="pf-stats"></div>
+            </div>
+          </div>
+          <div class="pf-cols">
+            <section>
+              <h3>Socials</h3>
+              <form class="socials" id="socials-form" autocomplete="off">
+                <label><span>Twitch</span><input name="twitch" maxlength="40" spellcheck="false" /></label>
+                <label><span>YouTube</span><input name="youtube" maxlength="40" spellcheck="false" /></label>
+                <label><span>X</span><input name="x" maxlength="40" spellcheck="false" /></label>
+                <label><span>Discord</span><input name="discord" maxlength="40" spellcheck="false" /></label>
+                <button class="btn ghost small" type="submit">Save</button>
+              </form>
+            </section>
+            <section>
+              <h3>Top songs</h3>
+              <ol class="list" id="pf-top"></ol>
+            </section>
+          </div>
+          <section>
+            <h3>History</h3>
+            <ul class="list" id="history-list"></ul>
+          </section>
+        </div>
+        <div class="ptab hidden" id="ptab-settings">
+          <div class="setting"><span>Music volume</span><input type="range" min="0" max="1" step="0.05" id="set-music" /></div>
+          <div class="setting"><span>Effects volume</span><input type="range" min="0" max="1" step="0.05" id="set-effects" /></div>
+          <div class="setting"><span>Block sounds</span><label class="switch"><input type="checkbox" id="set-block" /><i></i></label></div>
+          <div class="setting"><span>Screen effects</span><label class="switch"><input type="checkbox" id="set-fx" /><i></i></label></div>
+          <div class="setting"><span>Show FPS</span><label class="switch"><input type="checkbox" id="set-fps" /><i></i></label></div>
+          <div class="setting"><span>Graphics</span>
+            <div class="seg" id="set-quality">
+              <button class="seg-btn" data-q="low">Low</button>
+              <button class="seg-btn" data-q="medium">Medium</button>
+              <button class="seg-btn" data-q="high">High</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Leaderboard -->
+    <section id="leaderboard" class="overlay hidden">
+      <div class="panel-wrap">
+        <header class="panel-head"><h2>Leaderboard</h2><button class="icon-btn" id="lb-close">✕</button></header>
+        <div class="lb-scroll"><table class="table lb" id="lb-table"></table></div>
+        <table class="table lb lb-me" id="lb-me"></table>
+      </div>
+    </section>
+
+    <!-- A pilot's public profile -->
+    <section id="pilot" class="overlay hidden">
+      <div class="panel-wrap small">
+        <header class="panel-head"><h2 id="pilot-name"></h2><button class="icon-btn" id="pilot-close">✕</button></header>
+        <div id="pilot-body"></div>
+      </div>
+    </section>
+
+    <!-- Pilot name -->
+    <section id="name-modal" class="overlay hidden">
+      <form class="modal" id="name-form" autocomplete="off">
+        <h2>Pilot name</h2>
+        <input id="name-input" type="text" maxlength="16" placeholder="Pilot name" spellcheck="false" autocomplete="nickname" />
+        <div class="modal-error" id="name-error"></div>
+        <div class="menu-row">
+          <button class="btn primary" type="submit">Let's ride</button>
+          <button class="btn ghost hidden" type="button" id="name-cancel">Cancel</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Hangar -->
+    <section id="hangar" class="overlay hidden">
+      <div class="hangar-wrap">
+        <header class="hangar-head">
+          <h2>Hangar</h2>
+          <div class="hangar-name" id="hangar-name"></div>
+          <span class="credits" id="hangar-credits"></span>
+          <button class="btn ghost small" id="hangar-random">🎲 Random</button>
+          <button class="btn ghost small" id="hangar-cancel">Cancel</button>
+          <button class="btn primary small" id="hangar-save">Save</button>
+        </header>
+        <div class="hangar-grid">
+          <nav class="hangar-cats" id="hangar-cats"></nav>
+          <div class="hangar-view"><canvas id="hangar-canvas"></canvas></div>
+          <div class="hangar-side">
+            <div class="hangar-options" id="hangar-options"></div>
+            <div class="hangar-bar hidden" id="hangar-bar"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Another pilot's ship -->
+    <section id="ship-modal" class="overlay hidden">
+      <div class="ship-modal">
+        <header><b id="ship-modal-name"></b><button class="icon-btn" id="ship-modal-close">✕</button></header>
+        <canvas id="ship-modal-canvas"></canvas>
+      </div>
+    </section>
+
+    <!-- Lobby -->
+    <section id="lobby" class="overlay hidden">
+      <div class="lobby-wrap">
+        <header class="lobby-head">
+          <span class="badge" id="lobby-mode">RANKED</span>
+          <div class="lobby-title">
+            <h2 id="lobby-phase">Waiting for pilots</h2>
+            <p id="lobby-sub"></p>
+          </div>
+          <div class="rounds" id="lobby-rounds"></div>
+          <button class="code-chip" id="lobby-code" title="Copy invite link"><small>CODE</small><b id="lobby-code-text">—</b><span>⧉</span></button>
+          <div class="lobby-timer" id="lobby-timer"></div>
+          <button class="btn ghost small" id="lobby-leave">Leave</button>
+        </header>
+        <div class="lobby-grid">
+          <ol class="lobby-players" id="lobby-players"></ol>
+          <div class="lobby-center" id="lobby-center"></div>
+          <div class="lobby-chat">
+            <ul id="chat-log"></ul>
+            <form id="chat-form" autocomplete="off">
+              <input id="chat-input" type="text" maxlength="200" placeholder="Say something…" />
+            </form>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Loading -->
+    <section id="loading" class="overlay hidden">
+      <div class="loading-inner">
+        <div class="spinner"><i></i><i></i><i></i></div>
+        <div class="loading-title" id="loading-title">Building your track</div>
+        <div class="bar"><div class="bar-fill" id="loading-bar"></div></div>
+        <div class="loading-status" id="loading-status"></div>
+        <button class="btn ghost small" id="loading-cancel">Cancel</button>
+      </div>
+    </section>
+
+    <!-- Pause -->
+    <section id="pause" class="overlay hidden">
+      <div class="pause-inner">
+        <h2 id="pause-title">PAUSED</h2>
+        <button class="btn primary" id="btn-resume">Resume</button>
+        <button class="btn ghost" id="btn-restart">Restart</button>
+        <button class="btn ghost" id="btn-quit">Quit to menu</button>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="results" class="overlay hidden">
+      <div class="results-inner">
+        <div class="place" id="res-place">A</div>
+        <div class="res-song" id="res-song"></div>
+        <div class="res-score" id="res-score">0</div>
+        <div class="res-credits" id="res-credits"></div>
+        <div class="stats" id="res-stats"></div>
+        <div class="res-best" id="res-best"></div>
+        <ol class="res-board" id="res-board"></ol>
+        <div class="menu-row">
+          <button class="btn primary" id="btn-again">Ride again</button>
+          <button class="btn ghost" id="btn-menu">New song</button>
+        </div>
+      </div>
+    </section>
+
+    <div id="fps" class="hidden"></div>
+    <div id="drop-zone" class="hidden"><div>Drop to ride</div></div>
+    <div id="toast" class="hidden"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
