@@ -249,7 +249,7 @@ export class Stage {
         break;
       }
       const groove = smooth01((b.pulse - 0.25) / 0.25) * (0.55 + 0.45 * b.hit);
-      this.ripples.add(b.s, 0.3 * groove * (b.downbeat ? 1.1 : 1));
+      this.ripples.add(b.s, 0.5 * groove * (b.downbeat ? 1.1 : 1));
     }
   }
 
@@ -304,7 +304,7 @@ export class Stage {
 
     // --- ship ----------------------------------------------------------------------
     this.ship?.update(f0, local.x, local.vx, time, dt, {
-      lift: this.ripples.height(this.playerS, local.x) * 0.7,
+      lift: this.ripples.height(this.playerS, local.x) * 0.8,
       power: THREE.MathUtils.clamp((this.playerSpeed - 55) / 80, 0, 1),
       hurt: time - local.hurtAt < 0.6,
       bass: input.bass,
