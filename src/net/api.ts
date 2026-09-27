@@ -74,11 +74,6 @@ export async function history(): Promise<HistoryGame[]> {
   return (await call<{ games: HistoryGame[] }>('/api/history')).games;
 }
 
-/** Record a solo run; returns the credits it earned and the updated pilot. */
-export async function recordSolo(songKey: string, title: string, artist: string, score: number): Promise<{ earned: number; player: PlayerInfo } | null> {
-  return call<{ earned: number; player: PlayerInfo }>('/api/solo', { method: 'POST', body: JSON.stringify({ songKey, title, artist, score }) }).catch(() => null);
-}
-
 export async function buy(slot: string, id: string): Promise<PlayerInfo> {
   return (await call<{ player: PlayerInfo }>('/api/shop/buy', { method: 'POST', body: JSON.stringify({ slot, id }) })).player;
 }

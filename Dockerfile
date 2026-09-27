@@ -12,13 +12,15 @@ RUN npm run build
 FROM node:24-slim
 ENV NODE_ENV=production PORT=8787 HOST=0.0.0.0 NPM_CONFIG_UPDATE_NOTIFIER=false
 WORKDIR /app
+# FFmpeg decodes songs for the server's analysis.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY server ./server
 COPY scripts ./scripts
-COPY src/ship/catalog.ts ./src/ship/catalog.ts
-COPY src/net/protocol.ts ./src/net/protocol.ts
+# The server replays runs with the game's own simulation and track generator.
+COPY src ./src
 COPY deploy/entrypoint.sh /usr/local/bin/songsurf-entrypoint
 # The database, audio cache and yt-dlp binary live in /app/.cache (a volume), owned by the app user.
 RUN mkdir -p .cache && chown node:node .cache && chmod 0755 /usr/local/bin/songsurf-entrypoint

@@ -7,12 +7,20 @@ import {
   type ChatMsg, type ClientMsg, type FinalRow, type LobbyView, type Mode, type Phase, type RoundResult, type ServerMsg, type SongRef,
 } from '../src/net/protocol.ts';
 import { creditsForScore, PLACE_CREDITS } from '../src/ship/catalog.ts';
+import { Pacer, RunVerifier, type InputChunk, type TrackCore } from '../src/game/replay.ts';
+import { STEP } from '../src/game/sim.ts';
+import { onSolo } from './solo.ts';
+import { songData } from './tracks.ts';
 
 /**
  * Lobbies: up to 8 pilots, launched after 2 minutes (or 10 s once full, needs 2+), then a
  * 3-round match. Each round: vote between 3 submitted songs → everyone loads → synced start
  * → placements. Ranked lobbies are matchmade by Elo and move ratings; casual lobbies are
  * for fun and have a short code so friends can join them.
+ *
+ * Scores are the server's: racers stream their inputs, the server replays them on its own
+ * copy of the track (and checks they keep pace with the music), so a modified client can't
+ * report a score it didn't ride.
  */
 
 const WAIT_MS = Number(process.env.SONGSURF_LOBBY_WAIT_MS || process.env.RIDEX_LOBBY_WAIT_MS) || 120_000;
@@ -45,6 +53,16 @@ interface Member {
   live: number;
   points: number;
   lastChat: number;
+  /** this round's run, as replayed by the server */
+  run: LobbyRun | null;
+}
+
+interface LobbyRun {
+  verifier: RunVerifier | null;
+  pacer: Pacer;
+  queue: InputChunk[];
+  /** why the run stopped counting (bad or off-tempo inputs) */
+  error: string | null;
 }
 
 function newCode(): string {
@@ -67,6 +85,8 @@ class Lobby {
   raceEnd = 0;
   round = 0;
   song: SongRef | null = null;
+  /** the current song's blocks, once the server has them */
+  core: TrackCore | null = null;
   candidates: SongRef[] = [];
   played = new Set<string>();
   chat: ChatMsg[] = [];
@@ -131,7 +151,7 @@ function system(l: Lobby, text: string) {
 function addMember(l: Lobby, player: db.Player, ws: WebSocket) {
   l.members.set(player.id, {
     player, ws, droppedAt: null, left: false, submission: null, vote: null,
-    readyRound: -1, finishedRound: -1, live: 0, points: 0, lastChat: 0,
+    readyRound: -1, finishedRound: -1, live: 0, points: 0, lastChat: 0, run: null,
   });
   playerLobby.set(player.id, l);
   system(l, `${player.name} joined`);
@@ -225,8 +245,16 @@ function pickSong(l: Lobby) {
   const top = l.candidates.filter((c) => (counts.get(c.key) ?? 0) === best);
   l.song = top[Math.floor(Math.random() * top.length)];
   l.played.add(l.song.key);
-  const id = l.song.key.startsWith('yt:') ? l.song.key.slice(3) : null;
-  if (id) ensureAudio(id).catch(() => {});
+  l.core = null;
+  const key = l.song.key;
+  songData(key).then(
+    (d) => {
+      if (l.song?.key !== key) return;
+      l.core = d.core;
+      for (const m of l.members.values()) if (m.run && !m.run.verifier) startVerifier(l, m);
+    },
+    (e) => console.error(`lobby song ${key}:`, (e as Error).message),
+  );
   l.phase = 'loading';
   l.deadline = Date.now() + LOAD_TIMEOUT_MS;
   system(l, `▶ ${l.song.title}`);
@@ -243,7 +271,39 @@ function startRace(l: Lobby) {
   l.phase = 'racing';
   l.startAt = now + COUNTDOWN_MS;
   l.raceEnd = l.startAt + (l.song!.duration || 240) * 1000 + 8000;
-  for (const m of l.members.values()) m.live = 0;
+  for (const m of l.members.values()) {
+    m.live = 0;
+    m.run = null;
+  }
+}
+
+function startVerifier(l: Lobby, m: Member) {
+  const run = m.run!;
+  run.verifier = new RunVerifier(l.core!);
+  for (const c of run.queue.splice(0)) if (!run.error) run.error = run.verifier.feed(c);
+  m.live = run.verifier.score;
+}
+
+/** A chunk of a racer's inputs: pace check, then replay. */
+function raceInput(l: Lobby, m: Member, chunk: unknown) {
+  m.run ??= { verifier: null, pacer: new Pacer(l.startAt!), queue: [], error: null };
+  const run = m.run;
+  if (run.error) return;
+  const c = chunk as InputChunk;
+  if (!c || !Number.isInteger(c.upTo)) {
+    run.error = 'bad input';
+    return;
+  }
+  run.error = run.pacer.check(Date.now(), c.upTo * STEP);
+  if (run.error) return;
+  if (!l.core) {
+    if (run.queue.length >= 2000) run.error = 'too many inputs';
+    else run.queue.push(c);
+    return;
+  }
+  if (!run.verifier) startVerifier(l, m);
+  run.error = run.verifier!.feed(c);
+  m.live = run.verifier!.score;
 }
 
 /**
@@ -261,6 +321,8 @@ function placements(values: number[]): number[] {
 function finishRound(l: Lobby) {
   const song = l.song!;
   const members = [...l.members.values()];
+  // A run whose inputs stopped adding up (tampering, slow motion) scores 0.
+  for (const m of members) if (m.run?.error) m.live = 0;
   const racing = members.filter((m) => !m.left).sort((a, b) => b.live - a.live);
   const places = placements(racing.map((m) => m.live));
   const rows: RoundResult['rows'] = [];
@@ -268,8 +330,8 @@ function finishRound(l: Lobby) {
     // Tied scores share the placement, and so the same round points.
     const placement = places[i];
     const points = PLACE_POINTS[placement - 1] ?? 0;
-    // Credits: from the score, plus a bonus for the placement.
-    const credits = creditsForScore(m.live) + (PLACE_CREDITS[placement - 1] ?? PLACE_CREDITS[PLACE_CREDITS.length - 1]);
+    // Credits: from the score, plus a bonus for the placement (none for a run that stopped counting).
+    const credits = m.run?.error ? 0 : creditsForScore(m.live) + (PLACE_CREDITS[placement - 1] ?? PLACE_CREDITS[PLACE_CREDITS.length - 1]);
     db.addCredits(m.player.id, credits);
     m.points += points;
     rows.push({ id: m.player.id, name: m.player.name, score: m.live, points, placement, left: false, credits });
@@ -560,16 +622,18 @@ export function onConnection(ws: WebSocket) {
           broadcast(l);
         }
         return;
-      case 'score':
-        if (l && m && l.phase === 'racing' && msg.round === l.round && Number.isFinite(msg.score)) m.live = Math.max(0, Math.round(msg.score));
+      case 'input':
+        if (l && m && l.phase === 'racing' && msg.round === l.round && m.finishedRound !== l.round) raceInput(l, m, msg.chunk);
         return;
       case 'finish':
-        if (l && m && l.phase === 'racing' && msg.round === l.round && Number.isFinite(msg.score)) {
-          m.live = Math.max(0, Math.round(msg.score));
+        if (l && m && l.phase === 'racing' && msg.round === l.round && m.finishedRound !== l.round) {
+          if (msg.chunk) raceInput(l, m, msg.chunk);
           m.finishedRound = l.round;
           broadcast(l);
         }
         return;
+      case 'solo':
+        return onSolo(ws, me, msg);
     }
   });
 

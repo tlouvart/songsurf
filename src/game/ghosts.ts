@@ -111,21 +111,6 @@ export async function fetchTopRuns(songId: string, timeoutMs = 2500): Promise<Gh
   }
 }
 
-export async function submitRun(run: GhostRun): Promise<{ rank: number; board: BoardEntry[] } | null> {
-  try {
-    const res = await fetch('/api/runs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(run),
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 /** Pick who to race: the top of the board, and your own best, without duplicates. */
 export function pickGhosts(songId: string, top: GhostRun[], me: string): Ghost[] {
   const pb = localBest(songId);

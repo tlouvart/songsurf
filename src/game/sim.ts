@@ -8,7 +8,16 @@ import { clamp } from '../track/random.ts';
  *
  * Scoring is catch & combo: every caught block scores by colour × the combo multiplier.
  * Missing a block halves the combo, catching a grey block resets it.
+ *
+ * The simulation advances in fixed steps of song time, whatever the frame rate, and only
+ * reads the controller's lateral target (rounded to 1/100) and overdrive requests. That makes
+ * a run fully reproducible from its input log: the server replays it to score it.
  */
+
+/** simulation step, seconds of song time */
+export const STEP = 1 / 240;
+/** lateral targets are rounded to this, so a replay sees exactly what the live run saw */
+export const X_QUANT = 100;
 
 /** points per block, by colour tier (cool → hot) */
 export const NOTE_POINTS = [10, 15, 20, 30, 40];
@@ -68,9 +77,17 @@ export type RaceEvent =
 
 export const multiplierOf = (r: Racer) => Math.min(MAX_MULT, 1 + Math.floor(r.combo / COMBO_STEP));
 
+/** Receives the sim's inputs every step (see ./replay.ts). */
+export interface InputSink {
+  record(step: number, xq: number, overdrive: boolean): void;
+}
+
 export class RaceSim {
   racer: Racer;
   time = -Infinity;
+  /** index of the last simulated step (time = step × STEP), null before the first one */
+  step: number | null = null;
+  input: InputSink | null = null;
   private next = 0;
   private streamCaught = new Map<number, number>();
   private streamSeen = new Map<number, number>();
@@ -100,13 +117,27 @@ export class RaceSim {
     return out;
   }
 
-  update(time: number, frameDt: number) {
-    // Movement runs on song time too, so a slow frame never leaves the ship behind the music.
-    const dt = Number.isFinite(this.time) ? clamp(time - this.time, 0, 0.1) : frameDt;
+  /** Advance to song time `time` (in whole steps). */
+  update(time: number) {
+    const target = Math.floor(time / STEP + 1e-9);
+    if (this.step === null) this.step = target - 1;
+    this.advanceTo(target);
+  }
+
+  /** Simulate every step up to and including `step`. */
+  advanceTo(step: number) {
+    if (this.step === null) this.step = step - 1;
+    while (this.step < step) this.tick(++this.step);
+  }
+
+  private tick(step: number) {
+    const dt = STEP;
+    const time = step * STEP;
     this.time = time;
     const r = this.racer;
     r.controller.update(r, this, dt);
-    r.targetX = clamp(r.targetX, laneX(0), laneX(LANES - 1));
+    r.targetX = Math.round(clamp(r.targetX, laneX(0), laneX(LANES - 1)) * X_QUANT) / X_QUANT;
+    this.input?.record(step, Math.round(r.targetX * X_QUANT), r.wantsOverdrive);
     // Exact critically damped spring (stable at any dt): a lane switch settles in ~0.1 s.
     const w = 38;
     const e = r.x - r.targetX;

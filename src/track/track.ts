@@ -8,7 +8,7 @@ const smootherstep = (u: number) => u * u * u * (u * (u * 6 - 15) + 10);
  * Bump whenever generation changes the layout of a song's track: ghosts and leaderboards
  * are keyed on it, since a recorded run only makes sense on the exact same track.
  */
-export const TRACK_VERSION = 4;
+export const TRACK_VERSION = 5;
 
 export const LANES = 5;
 export const LANE_WIDTH = 3.2;

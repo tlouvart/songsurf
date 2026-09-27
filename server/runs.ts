@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Per-song leaderboards with ghost data, stored as one JSON file per song. Plenty for a
- * community server; swap for a database if it ever needs to scale.
+ * Per-song leaderboards with ghost data, stored as one JSON file per song. Only runs the
+ * server replayed and scored itself get here. Plenty for a community server; swap for a
+ * database if it ever needs to scale.
  */
 
 interface Run {
@@ -21,7 +22,6 @@ interface Run {
 const DIR = join(process.cwd(), '.cache', 'runs');
 mkdirSync(DIR, { recursive: true });
 const KEEP = 20;
-const MAX_DURATION = 16 * 60;
 
 const fileFor = (songId: string) => join(DIR, `${createHash('sha1').update(songId).digest('hex')}.json`);
 
@@ -39,28 +39,20 @@ export function topRuns(songId: string, n = 10): Run[] {
   return load(songId).slice(0, n);
 }
 
-const isInt = (v: unknown) => typeof v === 'number' && Number.isInteger(v);
-
-/** Validate and store a run. Returns the run's rank (1-based) and the board, or an error. */
-export function addRun(body: unknown): { rank: number; board: { name: string; score: number; date: number }[] } | { error: string } {
-  const r = body as Partial<Run>;
-  if (!r || r.v !== 1) return { error: 'bad run' };
-  if (typeof r.songId !== 'string' || r.songId.length > 200) return { error: 'bad song id' };
-  const name = String(r.name ?? '').replace(/[^\p{L}\p{N} _.\-]/gu, '').trim().slice(0, 16) || 'ANON';
-  if (!isInt(r.score) || r.score! < 0 || r.score! > 50_000_000) return { error: 'bad score' };
-  if (r.rate !== 10 || !Array.isArray(r.x) || !Array.isArray(r.s)) return { error: 'bad samples' };
-  if (r.x.length !== r.s.length || r.x.length > MAX_DURATION * 10 || !r.x.every(isInt) || !r.s.every(isInt)) {
-    return { error: 'bad samples' };
-  }
-  const run: Run = { v: 1, songId: r.songId, name, score: r.score!, date: Date.now(), rate: 10, x: r.x, s: r.s };
-
+/**
+ * Store a run the server scored itself (see ./solo.ts). Returns the run's rank (1-based) and
+ * the board.
+ */
+export function addVerifiedRun(r: { songId: string; name: string; score: number; x: number[]; s: number[] }): {
+  rank: number;
+  board: { name: string; score: number; date: number }[];
+} {
+  const run: Run = { v: 1, songId: r.songId, name: r.name, score: r.score, date: Date.now(), rate: 10, x: r.x, s: r.s };
   let runs = load(run.songId);
   // One entry per pilot name: keep their best.
-  const existing = runs.find((o) => o.name === name);
-  if (existing && existing.score >= run.score) {
-    runs.sort((a, b) => b.score - a.score);
-  } else {
-    runs = runs.filter((o) => o.name !== name);
+  const existing = runs.find((o) => o.name === run.name);
+  if (!existing || existing.score < run.score) {
+    runs = runs.filter((o) => o.name !== run.name);
     runs.push(run);
     runs.sort((a, b) => b.score - a.score);
     runs = runs.slice(0, KEEP);

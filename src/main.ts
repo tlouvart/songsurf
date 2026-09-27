@@ -5,7 +5,8 @@ import { AudioFeed, MusicPlayer, Sfx } from './audio/playback.ts';
 import type { AudioAnalysis } from './audio/analyze.ts';
 import { AutopilotController, LocalController } from './game/controllers.ts';
 import { RaceSim, type RaceEvent } from './game/sim.ts';
-import { Ghost, localBest, Recorder, saveLocalBest, submitRun } from './game/ghosts.ts';
+import { Ghost, localBest, Recorder, saveLocalBest } from './game/ghosts.ts';
+import { InputLog } from './game/replay.ts';
 import * as api from './net/api.ts';
 import { Net } from './net/client.ts';
 import type { LobbyView, Mode as LobbyMode } from './net/protocol.ts';
@@ -30,6 +31,8 @@ const music = new MusicPlayer();
 const sfx = new Sfx();
 const net = new Net(api.token);
 const COUNTDOWN = 3;
+/** how often race inputs are streamed to the server (ms) */
+const INPUT_EVERY = 250;
 
 type Mode = 'attract' | 'race' | 'paused' | 'results';
 
@@ -47,7 +50,9 @@ interface Session {
   recorder?: Recorder;
   previousBest: number;
   /** set when this race is a lobby round */
-  multi?: { round: number; lastSent: number };
+  multi?: { round: number; lastSent: number; log: InputLog };
+  /** set when this solo run is streamed to the server to be verified and ranked */
+  solo?: { log: InputLog; lastSent: number; started: boolean };
 }
 
 let session: Session;
@@ -162,15 +167,50 @@ async function startSolo(song: LoadedSong) {
   stage.load(track, myLoadout());
   hud.setup(song.meta, track, [], best?.score ?? 0, PLAYER_COLOR, best ? new Ghost(best, 0, '') : null);
   hud.show(true);
-  session = {
-    mode: 'race', track, sim, analysis: song.analysis, feed: new AudioFeed(music.analyser), song, local, clock: 0,
-    finished: false, recorder: new Recorder(), previousBest: best?.score ?? 0,
-  };
-  lastSong = song;
-  for (const id of ['menu', 'loading', 'results', 'pause', 'lobby']) show(id, false);
   // ?seek=<seconds> starts mid-song: handy when working on a specific part of a track.
   const seek = Number(new URLSearchParams(location.search).get('seek')) || 0;
+  // Runs on the server's analysis are streamed as they're ridden, then scored by the server.
+  const solo = song.official && menu.player && net.connected && !seek ? { log: new InputLog(), lastSent: 0, started: false } : undefined;
+  sim.input = solo?.log ?? null;
+  abortSolo();
+  session = {
+    mode: 'race', track, sim, analysis: song.analysis, feed: new AudioFeed(music.analyser), song, local, clock: 0,
+    finished: false, recorder: new Recorder(), previousBest: best?.score ?? 0, solo,
+  };
+  const s = session;
+  lastSong = song;
+  for (const id of ['menu', 'loading', 'results', 'pause', 'lobby']) show(id, false);
   await music.play(song.buffer, COUNTDOWN, seek);
+  if (solo && session === s) {
+    net.send({ type: 'solo', action: 'start', key: song.meta.id, t: music.time });
+    solo.started = true;
+  }
+}
+
+/** Stop streaming the current solo run (quit, restart). */
+function abortSolo() {
+  if (session?.solo?.started && !session.finished) net.send({ type: 'solo', action: 'abort' });
+}
+
+/** The run waiting for the server's verdict. */
+let verdict: { name: string; local: number; timer: number } | null = null;
+
+net.on('soloResult', (m) => {
+  if (!verdict) return;
+  const { name, local, timer } = verdict;
+  verdict = null;
+  clearTimeout(timer);
+  if (!m.verified) return notRanked(m.reason);
+  // The server's score is the one that counts (it only differs if something went wrong here).
+  if (m.score !== local) console.warn(`server scored ${m.score}, this browser ${local}`);
+  $('res-score').textContent = m.score.toLocaleString('en-US');
+  $('res-credits').textContent = `+${m.earned.toLocaleString('en-US')} ◈`;
+  hud.leaderboard(m.board, name, m.score);
+  menu.setPlayer(m.player);
+});
+
+function notRanked(reason: string) {
+  $('res-credits').textContent = `Not ranked · ${reason}`;
 }
 
 function finishSolo() {
@@ -182,16 +222,14 @@ function finishSolo() {
   const name = menu.player?.name ?? 'ANON';
   const run = s.recorder!.finish(runKey(s.song!), name, s.sim.racer.score);
   $('res-credits').textContent = '';
-  if (!seeked) {
-    if (run.score > s.previousBest) saveLocalBest(run);
-    submitRun(run).then((res) => res && hud.leaderboard(res.board, name, run.score));
-    if (menu.player) {
-      api.recordSolo(s.song!.meta.id, s.song!.meta.title, s.song!.meta.artist, run.score).then((res) => {
-        if (!res) return;
-        $('res-credits').textContent = `+${res.earned.toLocaleString('en-US')} ◈`;
-        menu.setPlayer(res.player);
-      });
-    }
+  if (!seeked && run.score > s.previousBest) saveLocalBest(run);
+  if (s.solo?.started) {
+    net.send({ type: 'solo', action: 'finish', chunk: s.solo.log.take() });
+    $('res-credits').textContent = 'Verifying…';
+    if (verdict) clearTimeout(verdict.timer);
+    verdict = { name, local: s.sim.racer.score, timer: window.setTimeout(() => { verdict = null; notRanked('connection lost'); }, 8000) };
+  } else if (!seeked) {
+    notRanked(!s.song!.official ? 'local file' : !menu.player ? 'no pilot name' : 'offline');
   }
   setTimeout(() => {
     if (session !== s) return;
@@ -280,8 +318,9 @@ function startLobbyRace(v: LobbyView) {
   hud.show(true);
   session = {
     mode: 'race', track, sim, analysis: song.analysis, feed: new AudioFeed(music.analyser), song, local, clock: 0,
-    finished: false, previousBest: 0, multi: { round: v.round, lastSent: 0 },
+    finished: false, previousBest: 0, multi: { round: v.round, lastSent: 0, log: new InputLog() },
   };
+  sim.input = session.multi!.log;
   // Everyone's music starts at the same server instant; late loaders jump in mid-song.
   const delay = (v.startAt! - net.serverNow()) / 1000;
   music.play(song.buffer, Math.max(0, delay), Math.max(0, -delay));
@@ -291,7 +330,7 @@ function startLobbyRace(v: LobbyView) {
 function endLobbyRace(crossed: boolean) {
   const s = session;
   if (!s.multi) return;
-  if (crossed) net.send({ type: 'finish', round: s.multi.round, score: s.sim.racer.score });
+  if (crossed) net.send({ type: 'finish', round: s.multi.round, chunk: s.multi.log.take() });
   s.finished = true;
   music.stop();
   s.local?.dispose();
@@ -521,6 +560,7 @@ async function load(title: string, fn: (status: Status) => Promise<LoadedSong>) 
 }
 
 function toMenu() {
+  abortSolo();
   loadToken++;
   for (const id of ['pause', 'results', 'loading']) show(id, false);
   show('menu', true);
@@ -544,6 +584,7 @@ function pause() {
   $('btn-quit').textContent = 'Quit to menu';
   show('btn-restart', true);
   session.mode = 'paused';
+  if (session.solo?.started) net.send({ type: 'solo', action: 'pause', chunk: session.solo.log.take() });
   if (session.local) session.local.enabled = false;
   music.pause();
   show('pause', true);
@@ -554,6 +595,7 @@ function resume() {
   if (session.mode !== 'paused') return;
   session.mode = 'race';
   if (session.local) session.local.enabled = true;
+  if (session.solo?.started) net.send({ type: 'solo', action: 'resume' });
   music.resume();
 }
 
@@ -570,6 +612,10 @@ $<HTMLInputElement>('file-input').addEventListener('change', (e) => {
   (e.target as HTMLInputElement).value = '';
 });
 $('loading-cancel').addEventListener('click', toMenu);
+$('about-open').addEventListener('click', () => show('about', true));
+$('about-close').addEventListener('click', () => show('about', false));
+$('about').addEventListener('click', (e) => e.target === $('about') && show('about', false));
+window.addEventListener('keydown', (e) => e.key === 'Escape' && show('about', false));
 $('btn-resume').addEventListener('click', resume);
 $('btn-restart').addEventListener('click', () => lastSong && startSolo(lastSong));
 $('btn-quit').addEventListener('click', () => {
@@ -660,16 +706,23 @@ function tick(now: number) {
   }
 
   stage.setCovered(OVERLAYS.some((el) => !el.classList.contains('hidden')));
-  if (s.mode !== 'paused') s.sim.update(time, dt);
+  if (s.mode !== 'paused') s.sim.update(time);
   if (s.mode === 'race' && !s.finished) s.recorder?.push(time, s.sim.racer.x, s.sim.racer.score);
   s.feed.update(time, s.analysis, s.mode === 'race', dt);
   stage.frame(s.sim, { time, dt: s.mode === 'paused' ? 0 : dt, bands: s.feed.bands, bass: s.feed.bass, energy: s.feed.energy });
 
   if (s.mode === 'race') {
     hud.update(s.sim, stage, time);
-    if (s.multi && !s.finished && now - s.multi.lastSent > 500) {
+    // Inputs go to the server as they're ridden; it keeps the score that counts.
+    if (s.multi && !s.finished && now - s.multi.lastSent > INPUT_EVERY) {
       s.multi.lastSent = now;
-      net.send({ type: 'score', round: s.multi.round, score: s.sim.racer.score });
+      const chunk = s.multi.log.take();
+      if (chunk) net.send({ type: 'input', round: s.multi.round, chunk });
+    }
+    if (s.solo?.started && !s.finished && now - s.solo.lastSent > INPUT_EVERY) {
+      s.solo.lastSent = now;
+      const chunk = s.solo.log.take();
+      if (chunk) net.send({ type: 'solo', action: 'input', chunk });
     }
     if (!s.finished && time > s.track.duration + 0.8) {
       if (s.multi) endLobbyRace(true);

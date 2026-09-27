@@ -1,4 +1,5 @@
 import type { AudioAnalysis } from './analyze.ts';
+import { ANALYSIS_VERSION, decodeAnalysis, type EncodedAnalysis } from './codec.ts';
 
 export interface SongMeta {
   /** stable identifier, used as the track seed (same song → same track for everyone) */
@@ -12,6 +13,8 @@ export interface LoadedSong {
   meta: SongMeta;
   buffer: AudioBuffer;
   analysis: AudioAnalysis;
+  /** the analysis is the server's: runs on it can be verified and ranked */
+  official: boolean;
 }
 
 export type Status = (label: string, progress: number) => void;
@@ -82,20 +85,41 @@ export function analyzeBuffer(buffer: AudioBuffer, status: Status): Promise<Audi
   });
 }
 
+/** The server's analysis of a song (the same for every player). */
+async function fetchAnalysis(key: string): Promise<AudioAnalysis> {
+  const res = await fetch(`/api/analysis?key=${encodeURIComponent(key)}&v=${ANALYSIS_VERSION}`);
+  return decodeAnalysis(await readJson<EncodedAnalysis>(res));
+}
+
+/** Server analysis when available; otherwise analyse here (then the run is practice only). */
+async function analysisFor(buffer: AudioBuffer | Promise<AudioBuffer>, pending: Promise<AudioAnalysis>, status: Status) {
+  try {
+    return { analysis: await pending, official: true };
+  } catch {
+    return { analysis: await analyzeBuffer(await buffer, status), official: false };
+  }
+}
+
 export async function loadYouTube(url: string, status: Status): Promise<LoadedSong> {
   status('Looking up', 0);
   const info = await readJson<{ id: string; title: string; uploader: string; thumbnail: string }>(
     await fetch(`/api/track?url=${encodeURIComponent(url)}`),
   );
+  const key = `yt:${info.id}`;
   status('Fetching audio', 0);
   const bytes = await download(`/api/audio/${info.id}`, status, 'Downloading audio');
+  // The server analyses the song while the browser decodes it.
+  const pending = fetchAnalysis(key);
+  pending.catch(() => {});
   status('Decoding', 1);
   const buffer = await audioContext().decodeAudioData(bytes);
-  const analysis = await analyzeBuffer(buffer, status);
+  status('Analyzing', 1);
+  const { analysis, official } = await analysisFor(buffer, pending, status);
   return {
-    meta: { id: `yt:${info.id}`, title: info.title, artist: info.uploader, thumbnail: info.thumbnail },
+    meta: { id: key, title: info.title, artist: info.uploader, thumbnail: info.thumbnail },
     buffer,
     analysis,
+    official,
   };
 }
 
@@ -105,13 +129,17 @@ export async function loadFile(file: File, status: Status): Promise<LoadedSong> 
   const analysis = await analyzeBuffer(buffer, status);
   const name = file.name.replace(/\.[^.]+$/, '');
   const [artist, title] = name.includes(' - ') ? name.split(' - ', 2) : ['', name];
-  return { meta: { id: `file:${file.name}:${file.size}`, title, artist }, buffer, analysis };
+  // The server never sees your file, so it can't check the run: practice only.
+  return { meta: { id: `file:${file.name}:${file.size}`, title, artist }, buffer, analysis, official: false };
 }
 
 export async function loadDemo(status: Status): Promise<LoadedSong> {
+  const key = 'demo:neon-drive';
+  const pending = fetchAnalysis(key);
+  pending.catch(() => {});
   status('Synthesizing', 0.2);
   const { renderDemoSong } = await import('./demoSong.ts');
-  const buffer = await renderDemoSong();
-  const analysis = await analyzeBuffer(buffer, status);
-  return { meta: { id: 'demo:neon-drive', title: 'Neon Drive', artist: 'SongSurf synth' }, buffer, analysis };
+  const buffer = renderDemoSong();
+  const { analysis, official } = await analysisFor(buffer, pending, status);
+  return { meta: { id: key, title: 'Neon Drive', artist: 'SongSurf synth' }, buffer: await buffer, analysis, official };
 }

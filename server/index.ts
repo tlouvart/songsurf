@@ -3,11 +3,11 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { ensureAudio, getInfo, hasYtDlp, keepYtDlpFresh, parseVideoId } from './youtube.ts';
 import { BusyError, clientIp, RateLimiter } from './limits.ts';
-import { addRun, topRuns } from './runs.ts';
+import { topRuns } from './runs.ts';
+import { songData } from './tracks.ts';
 import { WebSocketServer } from 'ws';
 import * as db from './db.ts';
 import { onConnection, presence, refreshPlayer } from './lobby.ts';
-import { creditsForScore } from '../src/ship/catalog.ts';
 
 const PORT = Number(process.env.PORT || 8787);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -15,15 +15,12 @@ const DIST = join(process.cwd(), 'dist');
 const PROD = process.env.NODE_ENV === 'production';
 /** Browsers may only open the game socket from this origin (production). */
 const ORIGIN = process.env.PUBLIC_ORIGIN || '';
-const MAX_SCORE = 5_000_000;
 
 // Abuse limits (per client IP unless noted).
 const apiLimit = new RateLimiter(300, 60_000);
 const writeLimit = new RateLimiter(60, 60_000);
 const registerLimit = new RateLimiter(5, 3_600_000);
 const youtubeLimit = new RateLimiter(30, 60_000);
-/** per pilot: a song takes minutes, so one score every 45 s is plenty */
-const soloLimit = new RateLimiter(1, 45_000);
 const MAX_SOCKETS_PER_IP = 6;
 
 /** Security headers for every response. */
@@ -103,7 +100,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
   const ip = clientIp(req);
   if (!apiLimit.allow(ip)) return json(res, 429, { error: 'Too many requests, slow down' });
   if (req.method !== 'GET' && req.method !== 'HEAD' && !writeLimit.allow(ip)) return json(res, 429, { error: 'Too many requests, slow down' });
-  if ((url.pathname === '/api/track' || url.pathname.startsWith('/api/audio/')) && !youtubeLimit.allow(ip)) {
+  if ((url.pathname === '/api/track' || url.pathname === '/api/analysis' || url.pathname.startsWith('/api/audio/')) && !youtubeLimit.allow(ip)) {
     return json(res, 429, { error: 'Too many songs at once, wait a minute' });
   }
 
@@ -164,17 +161,6 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     if (!p) return json(res, 401, { error: 'unknown pilot' });
     return json(res, 200, { games: db.history(p.id) });
   }
-  if (url.pathname === '/api/solo' && req.method === 'POST') {
-    const p = me();
-    if (!p) return json(res, 401, { error: 'unknown pilot' });
-    const b = JSON.parse((await readBody(req, 4096)) || '{}');
-    if (typeof b.songKey !== 'string' || !Number.isFinite(b.score) || b.score < 0 || b.score > MAX_SCORE) return json(res, 400, { error: 'bad game' });
-    if (!soloLimit.allow(`solo:${p.id}`)) return json(res, 429, { error: 'Too many runs recorded, slow down' });
-    db.recordGame({ player_id: p.id, mode: 'solo', song_key: b.songKey.slice(0, 200), song_title: String(b.title ?? ''), song_artist: String(b.artist ?? ''), score: b.score });
-    const earned = creditsForScore(b.score);
-    db.addCredits(p.id, earned);
-    return json(res, 200, { ok: true, earned, player: db.byId(p.id) });
-  }
   if (url.pathname === '/api/leaderboard') {
     const p = me();
     return json(res, 200, { players: db.leaderboard(), me: p ? { player: p, rank: db.rankOf(p) } : null });
@@ -203,23 +189,23 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     return json(res, 200, { friends: db.friendsOf(p.id).map((f) => ({ ...f, ...presence(f.id) })) });
   }
 
-  if (url.pathname === '/api/runs') {
-    if (req.method === 'GET') {
-      const song = url.searchParams.get('song') ?? '';
-      if (!song || song.length > 200) return json(res, 400, { error: 'missing song' });
-      return json(res, 200, { runs: topRuns(song) });
-    }
-    if (req.method === 'POST') {
-      let body: unknown;
-      try {
-        body = JSON.parse(await readBody(req, 512 * 1024));
-      } catch (e) {
-        return json(res, 400, { error: (e as Error).message });
-      }
-      const out = addRun(body);
-      return json(res, 'error' in out ? 400 : 200, out);
+  if (url.pathname === '/api/runs' && req.method === 'GET') {
+    const song = url.searchParams.get('song') ?? '';
+    if (!song || song.length > 200) return json(res, 400, { error: 'missing song' });
+    return json(res, 200, { runs: topRuns(song) });
+  }
+
+  // The song's analysis, computed by the server: every browser builds the same track from it.
+  if (url.pathname === '/api/analysis') {
+    try {
+      const d = await songData(url.searchParams.get('key') ?? '');
+      res.writeHead(200, { ...SECURITY_HEADERS, 'content-type': 'application/json', 'cache-control': 'public, max-age=86400' });
+      return res.end(d.json);
+    } catch (e) {
+      return json(res, e instanceof BusyError ? 503 : 422, { error: (e as Error).message });
     }
   }
+
 
   const audio = url.pathname.match(/^\/api\/audio\/([A-Za-z0-9_-]{11})$/);
   if (audio) {

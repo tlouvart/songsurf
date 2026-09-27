@@ -4,13 +4,14 @@
 
 Paste a YouTube link (or drop an audio file) and SongSurf builds a neon rollercoaster from the music, then you ride it.
 
-It's a web take on the Audiosurf idea. The track is generated from the song itself: calm passages climb, loud ones dive, turns and twists follow the phrasing, and the biggest drops throw in a loop. The blocks you catch are the music's hits.
+It's a fan-made web take on [Audiosurf](https://store.steampowered.com/app/12900/AudioSurf/), the game by Dylan Fitterer that started it all (see [Credits](#credits)). The track is generated from the song itself: calm passages climb, loud ones dive, turns and twists follow the phrasing, and the biggest drops throw in a loop. The blocks you catch are the music's hits.
 
 ## Play
 
 ```bash
 npm install
 npm run setup     # downloads the latest yt-dlp into .cache/bin (needed for YouTube links)
+                  # FFmpeg must be installed too: the server decodes songs to analyse them
 npm run dev       # API on :8787, game on http://localhost:5173
 ```
 
@@ -87,6 +88,8 @@ YouTube URL ──► server (yt-dlp) ──► audio file ──► browser
 | `src/render/*` | track mesh, blocks, ship, environment, particles, post-processing |
 | `server/lobby.ts` | lobbies: phases, votes, synced starts, placements, Elo (leaving ranks you last) |
 | `server/db.ts` | SQLite (Node's built-in `node:sqlite`, `.cache/songsurf.db`): pilots, friends, games |
+| `server/tracks.ts` | the server's analysis of every song (worker thread, FFmpeg decode), cached on disk |
+| `server/solo.ts`, `src/game/replay.ts` | verified runs: input logs, server-side replay, pace checks |
 | `server/` | YouTube lookup/download with caching, per-song boards, static hosting |
 
 Handy for development: `?seek=<seconds>` starts a song mid-way (runs are then not recorded). `window.songsurf` exposes the stage, session and lobby in the console, and `songsurf.finishRace()` crosses the line early. `SONGSURF_LOBBY_WAIT_MS` shortens the lobby wait, `SONGSURF_DB` picks another database file, and `SONGSURF_API` points a second Vite dev server at another API port.
@@ -109,11 +112,28 @@ Server settings (environment): `PORT`, `HOST`, `PUBLIC_ORIGIN` (the only origin 
 
 The server rate-limits per client address (API calls, sign-ups, YouTube lookups, recorded runs, socket connections and messages), caps concurrent yt-dlp jobs, and sends a strict content security policy.
 
+## Fair play
+
+Scores are never taken from the browser:
+
+- **One track for everyone.** The server analyses each song once and sends that analysis to every player, so everyone builds exactly the same track (it's deterministic from the analysis and the song id).
+- **Inputs, not scores.** The simulation runs in fixed steps of song time and only depends on where the pilot steers and when they fire Overdrive. While you ride, the game streams those inputs to the server a few times a second.
+- **Server-side replay.** The server feeds the inputs to its own simulation of the same track. The score it gets is the one recorded on boards, used for placements and Elo, and turned into credits. In lobbies, the live scores everyone sees are the server's too.
+- **Real time only.** Inputs have to keep pace with the music on the server's clock: a run generated offline arrives ahead of the music, slow motion falls behind it, and either stops counting. Pauses (solo only) are declared and timed by the server, and limited.
+- **Practice runs.** Songs from local audio files never reach the server, so those runs can't be checked and aren't ranked.
+
+What this can't stop is someone writing a bot that plays in real time. It still has to ride the song at normal speed, one run at a time.
+
 ## Notes
 
 - Downloading from YouTube relies on [yt-dlp](https://github.com/yt-dlp/yt-dlp). If downloads start failing with HTTP 403, run `npm run setup` again to get the newest version. Respect the terms of the content you play.
-- Scores are reported by the players' browsers and trusted as-is: fine among friends, not yet a cheat-proof public ladder.
 - Node 24+ is required.
+
+## Credits
+
+SongSurf is a tribute to **[Audiosurf](https://store.steampowered.com/app/12900/AudioSurf/)** (2008) and **[Audiosurf 2](https://store.steampowered.com/app/235800/Audiosurf_2/)**, created by **Dylan Fitterer** (Invisible Handlebar). Riding your own music, catching blocks on the beat and chasing combos is his idea; go play the originals. SongSurf is an independent project, not affiliated with or endorsed by Audiosurf or its creator.
+
+Built with [three.js](https://threejs.org), [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org).
 
 ## License
 

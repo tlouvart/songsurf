@@ -112,6 +112,7 @@
             <span><kbd>Space</kbd> overdrive</span>
             <span><kbd>Esc</kbd> pause</span>
           </div>
+          <button class="tribute" id="about-open" type="button">Inspired by <b>Audiosurf</b> by Dylan Fitterer · About</button>
         </main>
 
         <aside class="side">
@@ -200,6 +201,29 @@
         <header class="panel-head"><h2>Leaderboard</h2><button class="icon-btn" id="lb-close">✕</button></header>
         <div class="lb-scroll"><table class="table lb" id="lb-table"></table></div>
         <table class="table lb lb-me" id="lb-me"></table>
+      </div>
+    </section>
+
+    <!-- About: credits and fair play -->
+    <section id="about" class="overlay hidden">
+      <div class="panel-wrap small about">
+        <header class="panel-head"><h2>About</h2><button class="icon-btn" id="about-close">✕</button></header>
+        <p>SongSurf turns any song into a track you ride: every block, turn and burst of speed comes from the music.</p>
+        <h3>The original</h3>
+        <p>
+          SongSurf is a fan-made tribute to <b>Audiosurf</b> (2008), created by <b>Dylan Fitterer</b>
+          (Invisible Handlebar). Riding your own music, catching blocks on the beat, chasing combos:
+          the idea is his, and it's still a joy to play.
+        </p>
+        <div class="menu-row">
+          <a class="btn ghost small" href="https://store.steampowered.com/app/12900/AudioSurf/" target="_blank" rel="noopener noreferrer">Audiosurf on Steam</a>
+          <a class="btn ghost small" href="https://store.steampowered.com/app/235800/Audiosurf_2/" target="_blank" rel="noopener noreferrer">Audiosurf 2</a>
+        </div>
+        <p class="fine">SongSurf is an independent project, not affiliated with or endorsed by Audiosurf or its creator.</p>
+        <h3>Fair play</h3>
+        <p>Scores are worked out by the server: it replays your inputs on the same track everyone rides. Runs on your own audio files are practice.</p>
+        <h3>Built with</h3>
+        <p><a href="https://threejs.org" target="_blank" rel="noopener noreferrer">three.js</a>, <a href="https://github.com/yt-dlp/yt-dlp" target="_blank" rel="noopener noreferrer">yt-dlp</a> and <a href="https://ffmpeg.org" target="_blank" rel="noopener noreferrer">FFmpeg</a>. Open source, MIT licensed.</p>
       </div>
     </section>
 

@@ -11,6 +11,7 @@ export const PLACE_POINTS = [10, 8, 6, 5, 4, 3, 2, 1];
 export const RANKED_UNLOCK = 3;
 
 import type { Loadout } from '../ship/catalog.ts';
+import type { InputChunk } from '../game/replay.ts';
 
 export interface PlayerInfo {
   id: number;
@@ -137,8 +138,25 @@ export type ClientMsg =
   | { type: 'vote'; key: string }
   | { type: 'chat'; text: string }
   | { type: 'loaded'; round: number }
-  | { type: 'score'; round: number; score: number }
-  | { type: 'finish'; round: number; score: number };
+  /** race inputs, streamed while racing; the server replays them to score the run */
+  | { type: 'input'; round: number; chunk: InputChunk }
+  | { type: 'finish'; round: number; chunk: InputChunk | null }
+  | ({ type: 'solo' } & SoloMsg);
+
+/** Verified solo runs (the server keeps one per pilot). */
+export type SoloMsg =
+  | { action: 'start'; key: string; t: number }
+  | { action: 'input'; chunk: InputChunk }
+  | { action: 'pause'; chunk: InputChunk | null }
+  | { action: 'resume' }
+  | { action: 'finish'; chunk: InputChunk | null }
+  | { action: 'abort' };
+
+export interface BoardRow {
+  name: string;
+  score: number;
+  date: number;
+}
 
 export type ServerMsg =
   | { type: 'welcome'; player: PlayerInfo }
@@ -147,4 +165,6 @@ export type ServerMsg =
   | { type: 'lobby'; lobby: LobbyView; now: number }
   | { type: 'left' }
   | { type: 'scores'; round: number; scores: Record<number, number> }
-  | { type: 'submitted'; song: SongRef };
+  | { type: 'submitted'; song: SongRef }
+  | { type: 'soloResult'; verified: true; score: number; earned: number; player: PlayerInfo; rank: number; board: BoardRow[] }
+  | { type: 'soloResult'; verified: false; reason: string };

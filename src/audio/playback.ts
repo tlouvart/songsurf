@@ -58,6 +58,8 @@ export class MusicPlayer {
   }
 
   stop() {
+    // Until the next song starts, song time is "not yet" rather than where the last one was.
+    this.startAt = Infinity;
     if (this.source) {
       try { this.source.stop(); } catch { /* already stopped */ }
       this.source.disconnect();

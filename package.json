@@ -15,6 +15,7 @@
     "setup": "node scripts/setup.mjs"
   },
   "dependencies": {
+    "three": "^0.186.1",
     "tsx": "^4.23.15",
     "ws": "^8.22.0"
   },
@@ -23,7 +24,6 @@
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.1",
     "concurrently": "^10.0.5",
-    "three": "^0.186.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
   },
