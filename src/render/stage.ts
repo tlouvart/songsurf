@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { frameAt, frameAtS, indexAtTime, laneX, newFrame, valueAt, type Block, type Track } from '../track/track.ts';
+import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, newFrame, valueAt, type Block, type Track } from '../track/track.ts';
 import type { RaceEvent, RaceSim } from '../game/sim.ts';
 import { BlockField } from './blocks.ts';
 import { Particles, Shockwaves, SpeedLines } from './effects.ts';
@@ -26,6 +26,7 @@ const f2 = newFrame();
 const v1 = new THREE.Vector3();
 const v2 = new THREE.Vector3();
 const v3 = new THREE.Vector3();
+const v4 = new THREE.Vector3();
 const tmpColor = new THREE.Color();
 const HURT = new THREE.Color(1, 0.15, 0.2);
 const MULT_COLOR = new THREE.Color(1, 0.82, 0.3);
@@ -281,10 +282,12 @@ export class Stage {
     // --- camera --------------------------------------------------------------------
     // 0 when cruising, ~1.6 flat out: drives FOV, camera, lines and blur.
     const speedK = THREE.MathUtils.clamp((this.playerSpeed - 60) / 130, 0, 1.7);
-    const back = 11.5 + speedK * 2.2;
-    const height = 5.4 - speedK * 1.1;
+    // A little higher and further back than a pure chase cam, looking further ahead and
+    // slightly down onto the track, so crests, dips and twists coming up stay in view.
+    const back = 12.5 + speedK * 2.2;
+    const height = 6.4 - speedK * 1.0;
     frameAtS(tr, this.playerS - back, f1);
-    frameAtS(tr, this.playerS + 32, f2);
+    frameAtS(tr, this.playerS + 40, f2);
     // The camera drifts after the ship lazily, so lane changes don't jerk the whole view.
     this.camX += (local.x - this.camX) * (1 - Math.exp(-dt * 3));
     const px = this.camX;
@@ -294,9 +297,9 @@ export class Stage {
       f1.pz + f1.rz * px * 0.45 + f1.uz * height,
     );
     v2.set(
-      f2.px + f2.rx * px * 0.3 + f2.ux * 1.4,
-      f2.py + f2.ry * px * 0.3 + f2.uy * 1.4,
-      f2.pz + f2.rz * px * 0.3 + f2.uz * 1.4,
+      f2.px + f2.rx * px * 0.3 + f2.ux * 0.4,
+      f2.py + f2.ry * px * 0.3 + f2.uy * 0.4,
+      f2.pz + f2.rz * px * 0.3 + f2.uz * 0.4,
     );
     // In tight curvature (loops) looking far down the track would lose the ship: look along
     // the ship's own heading instead.
@@ -320,22 +323,26 @@ export class Stage {
     v1.y += (Math.random() - 0.5) * sh;
     v1.z += (Math.random() - 0.5) * sh;
     this.camera.position.copy(v1);
-    // Camera up follows the banking, partially, and lazily.
-    // The camera rolls with the track: loops and corkscrews turn the whole world over.
-    v3.set(f1.ux + f0.ux, f1.uy + f0.uy, f1.uz + f0.uz).normalize();
+    // The camera rolls with the track (loops and barrel rolls turn the world over), looking a
+    // little ahead so it leans into what's coming. The ribbon's continuous twist is mostly
+    // taken back out, so the horizon stays readable through twisty passages.
+    v3.set(f1.ux + f0.ux * 1.5 + f2.ux * 0.5, f1.uy + f0.uy * 1.5 + f2.uy * 0.5, f1.uz + f0.uz * 1.5 + f2.uz * 0.5).normalize();
+    const ribbon = valueAt(tr.ribbon, indexAtS(tr, this.playerS));
+    if (ribbon !== 0) v3.applyAxisAngle(v4.set(f0.fx, f0.fy, f0.fz), ribbon * 0.65);
     // Smoothed on song time, not frame time, so a slow frame can't leave the camera behind.
     const sdt = THREE.MathUtils.clamp(time - this.lastTime, 0, 0.25);
     this.lastTime = time;
-    this.camUp.lerp(v3, 1 - Math.exp(-sdt * 10)).normalize();
+    this.camUp.lerp(v3, 1 - Math.exp(-sdt * 6)).normalize();
     this.camera.up.copy(this.camUp);
     this.camera.lookAt(v2);
 
     // FOV breathes with speed; catches give a quick punch that eases back.
     this.kick = Math.max(0, this.kick - dt * 2.2);
-    const targetFov = 64 + speedK * 19 + (overdrive ? 6 : 0) + this.kick * 4.5;
+    // Wider at cruise to see the track around the ship, capped lower flat out.
+    const targetFov = 70 + speedK * 13 + (overdrive ? 5 : 0) + this.kick * 4;
     this.fov += (targetFov - this.fov) * (1 - Math.exp(-dt * 7));
     shared.uHitAge.value += dt;
-    this.fov = THREE.MathUtils.clamp(this.fov, 50, 104);
+    this.fov = THREE.MathUtils.clamp(this.fov, 55, 98);
     this.camera.fov = this.fov;
     this.camera.updateProjectionMatrix();
 

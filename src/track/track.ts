@@ -8,7 +8,7 @@ const smootherstep = (u: number) => u * u * u * (u * (u * 6 - 15) + 10);
  * Bump whenever generation changes the layout of a song's track: ghosts and leaderboards
  * are keyed on it, since a recorded run only makes sense on the exact same track.
  */
-export const TRACK_VERSION = 6;
+export const TRACK_VERSION = 7;
 
 export const LANES = 5;
 export const LANE_WIDTH = 3.2;
@@ -105,6 +105,8 @@ export interface Track {
   fwd: Float32Array;
   right: Float32Array;
   up: Float32Array;
+  /** the track's continuous ribbon twist (rad), without barrel rolls: for the camera */
+  ribbon: Float32Array;
   intensity: Float32Array;
   speed: Float32Array;
   blocks: Block[];
@@ -279,49 +281,42 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
   }
   const yawSmooth = smoothArray(smoothArray(yawRate, Math.round(SPS * 0.6)), Math.round(SPS * 0.6));
 
-  // Heights: a roller coaster, not a slope. Hills are keyed to the bars: a new crest or
-  // valley every 1–4 bars (more often, steeper and deeper as the music gets intense), with
-  // Audiosurf's feel underneath (calm climbs, intense dives), a lift-hill climb into each
-  // drop and a plunge when it hits, and climbs into builds / dives when the energy jumps.
+  // Heights: the song drawn as a ride. No dice here, every wave comes from the music:
+  //  - dynamics: the track climbs while the music builds and dives as it releases,
+  //  - melody: it lifts with brighter, higher notes and sinks with darker ones,
+  //  - phrasing: a smooth swell locked to 2-bar phrases, deeper when the song is energetic,
+  //  - Audiosurf's feel underneath (calm rides high, intense rides low), a lift hill into
+  //    each drop and a plunge when it hits.
   const pitch = new Float32Array(count);
   {
-    const Iat = (t: number) => sampleFeature(a.intensity, a.fps, clamp(t, 0, a.duration));
-    const knots: { t: number; v: number }[] = [{ t: -PRE_ROLL, v: 0 }];
-    let up = rng() < 0.5;
-    for (let b = 0; b < bars.length; ) {
-      const t = bars[b];
-      const I = Iat(t);
-      const hold = I > 0.7 ? (rng() < 0.55 ? 1 : 2) : I > 0.4 ? 2 : 4;
-      const next = bars[Math.min(bars.length - 1, b + hold)] ?? t + barLen * hold;
-      let v = 0;
-      if (!inLoop(t, barLen * 2) && !inLoop(next, barLen)) {
-        // Crest and valley alternate; the amplitude follows the energy.
-        const amp = lerp(0.14, 0.58, Math.pow(I, 0.85)) * lerp(0.75, 1.1, rng());
-        v = (up ? 1 : -1) * amp;
-        // Anticipation: climb when the energy is about to rise, dive when it just fell.
-        v += clamp((Iat(t + barLen * hold) - I) * 1.6, -0.35, 0.35);
-        // Hot passages ride lower overall (Audiosurf's dive), calm ones higher.
-        v += lerp(0.08, -0.12, I);
-        // Rarely keep the same direction twice, for longer climbs and plunges.
-        if (rng() < 0.82) up = !up;
-      }
-      knots.push({ t, v });
-      b += hold;
-    }
-    knots.push({ t: a.duration + TAIL, v: 0 });
-    let k = 0;
+    const feat = (arr: Float32Array) => {
+      const out = new Float32Array(count);
+      for (let i = 0; i < count; i++) out[i] = sampleFeature(arr, a.fps, clamp(timeOf(i), 0, a.duration));
+      return out;
+    };
+    const half = Math.round((barLen / 2) * SPS);
+    const energy = smoothArray(feat(a.loudness), Math.round(SPS * 0.6));
+    const bright = feat(a.centroid);
+    const melody = smoothArray(bright, Math.round(SPS * 0.35));
+    const melodyBase = smoothArray(bright, Math.round(SPS * 6));
+    const bass = smoothArray(feat(a.low), Math.round(SPS * 0.5));
+    const phase0 = bars.length ? bars[0] : 0;
     for (let i = 0; i < count; i++) {
       const t = timeOf(i);
-      while (k + 1 < knots.length - 1 && knots[k + 1].t <= t) k++;
-      const k0 = knots[k], k1 = knots[Math.min(k + 1, knots.length - 1)];
-      const u = k1.t > k0.t ? clamp((t - k0.t) / (k1.t - k0.t), 0, 1) : 1;
-      let p = lerp(k0.v, k1.v, smootherstep(u));
-      // Lift hill into the drop, plunge when it hits.
-      p += 0.42 * tension[i] - 0.62 * drop[i];
-      pitch[i] = clamp(p, -0.95, 0.75);
+      const I = intensity[i];
+      const rise = energy[Math.min(count - 1, i + half)] - energy[Math.max(0, i - half)];
+      let p = lerp(0.1, -0.16, I);
+      p += clamp(rise * 2.1, -0.34, 0.34);
+      p += clamp((melody[i] - melodyBase[i]) * 2.1, -0.26, 0.26) * (0.45 + 0.55 * I);
+      p += (0.07 + 0.27 * I * (0.5 + 0.5 * bass[i])) * Math.sin((2 * Math.PI * (t - phase0)) / (barLen * 2));
+      p += 0.34 * tension[i] - 0.5 * drop[i];
+      if (inLoop(t, barLen)) p *= 0.3;
+      if (t < 0) p *= clamp((t + PRE_ROLL) / PRE_ROLL, 0, 1);
+      pitch[i] = clamp(p, -0.8, 0.6);
     }
   }
-  const pitchSmooth = smoothArray(smoothArray(pitch, Math.round(SPS * 0.3)), Math.round(SPS * 0.3));
+  // Well smoothed: waves, never bumps.
+  const pitchSmooth = smoothArray(smoothArray(pitch, Math.round(SPS * 0.4)), Math.round(SPS * 0.4));
 
   // Bank into turns, a bit more than physics would, for the swoop.
   const rollRaw = new Float32Array(count);
@@ -339,7 +334,7 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
     for (let b = 0; b < bars.length; ) {
       const t = bars[b];
       const I = sampleFeature(a.intensity, a.fps, t);
-      const v = inLoop(t, barLen * 2) ? 0 : sign * lerp(0.06, 0.5, I) * lerp(0.5, 1, rng());
+      const v = inLoop(t, barLen * 2) ? 0 : sign * lerp(0.05, 0.36, I) * lerp(0.5, 1, rng());
       if (rng() < 0.75) sign = -sign;
       knots.push({ t, v });
       b += I > 0.6 ? 2 : 4;
@@ -354,6 +349,9 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
       twist[i] = lerp(k0.v, k1.v, smootherstep(u));
     }
   }
+
+  // The ribbon twist alone (not the barrel rolls): the camera takes part of it back out.
+  const ribbon = twist.slice();
 
   // Occasional big moves layered on top of the flow: long slow barrel rolls, and loops on
   // the strongest drops (with a sideways shift so the exit clears the entry).
@@ -412,7 +410,7 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
   for (let i = 0; i < count; i++) s[i] -= s0;
 
   const track: Track = {
-    seed, duration: a.duration, bpm: a.bpm, count, s, pos, fwd, right, up, intensity, speed,
+    seed, duration: a.duration, bpm: a.bpm, count, s, pos, fwd, right, up, ribbon, intensity, speed,
     blocks: [], streams: [], beats: [], drops: [], elements, length: s[count - 1], noteCount: 0,
   };
 
