@@ -785,6 +785,15 @@ kbd {
 
 /* Library */
 #library { background: rgba(5, 2, 13, 0.88); z-index: 22; }
+.lib-add { display: flex; gap: 8px; }
+.lib-add input {
+  flex: 1; min-width: 0; background: rgba(51, 225, 255, 0.06); border: 1px solid rgba(51, 225, 255, 0.35); border-radius: 10px;
+  color: var(--ink); font: inherit; font-size: 16px; padding: 10px 14px; outline: none;
+}
+.lib-add input:focus { border-color: var(--cyan); box-shadow: 0 0 14px rgba(51, 225, 255, 0.25); }
+.lib-status { min-height: 18px; margin-top: -6px; font-size: 14px; color: var(--cyan); }
+.lib-status:empty { display: none; }
+.lib-status.error { color: #ff8a7a; }
 .lib-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .lib-bar input {
   flex: 1; min-width: 180px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 10px;

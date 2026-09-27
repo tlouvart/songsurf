@@ -4,7 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import { ensureAudio, getInfo, hasYtDlp, keepYtDlpFresh, parseVideoId } from './youtube.ts';
 import { BusyError, clientIp, RateLimiter } from './limits.ts';
 import { topRuns } from './runs.ts';
-import { songData } from './tracks.ts';
+import { DEMO_KEY, songData } from './tracks.ts';
 import { WebSocketServer } from 'ws';
 import * as db from './db.ts';
 import { onConnection, presence, refreshPlayer } from './lobby.ts';
@@ -22,6 +22,9 @@ const writeLimit = new RateLimiter(60, 60_000);
 const registerLimit = new RateLimiter(5, 3_600_000);
 const youtubeLimit = new RateLimiter(30, 60_000);
 const MAX_SOCKETS_PER_IP = 6;
+const LIBRARY_MAX = 1000;
+/** links accepted in one "add to library" */
+const LIBRARY_ADD_MAX = 10;
 
 /** Security headers for every response. */
 const SECURITY_HEADERS: Record<string, string> = {
@@ -165,6 +168,41 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, url: URL) {
     const p = me();
     if (!p) return json(res, 401, { error: 'unknown pilot' });
     if (req.method === 'DELETE') db.removeFromLibrary(p.id, url.searchParams.get('key') ?? '');
+    if (req.method === 'POST') {
+      // Add songs without playing them: one or more YouTube links (or the demo).
+      const body = JSON.parse((await readBody(req, 8192)) || '{}');
+      const inputs = String(body.urls ?? '').split(/[\s,]+/).filter(Boolean).slice(0, LIBRARY_ADD_MAX);
+      if (!inputs.length) return json(res, 400, { error: 'Paste a YouTube link' });
+      if (!youtubeLimit.allow(ip)) return json(res, 429, { error: 'Too many songs at once, wait a minute' });
+      const added: string[] = [];
+      const errors: string[] = [];
+      for (const input of inputs) {
+        if (db.librarySize(p.id) >= LIBRARY_MAX) {
+          errors.push(`Your library is full (${LIBRARY_MAX} songs)`);
+          break;
+        }
+        if (input === 'demo' || input === DEMO_KEY) {
+          db.addToLibrary(p.id, DEMO_KEY, 'Neon Drive', 'SongSurf synth');
+          added.push(DEMO_KEY);
+          continue;
+        }
+        const id = parseVideoId(input);
+        if (!id) {
+          errors.push(`Not a YouTube link: ${input.slice(0, 60)}`);
+          continue;
+        }
+        try {
+          const info = await getInfo(id);
+          db.addToLibrary(p.id, `yt:${id}`, info.title, info.uploader);
+          added.push(`yt:${id}`);
+          // Get the song ready in the background, so it starts fast when you ride it.
+          songData(`yt:${id}`).catch(() => {});
+        } catch (e) {
+          errors.push((e as Error).message);
+        }
+      }
+      return json(res, 200, { songs: db.library(p.id), added, errors });
+    }
     return json(res, 200, { songs: db.library(p.id) });
   }
   if (url.pathname === '/api/leaderboard') {

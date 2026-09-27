@@ -316,6 +316,10 @@ export function library(playerId: number): LibrarySong[] {
     .all(playerId) as unknown as LibrarySong[];
 }
 
+export function librarySize(playerId: number): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM library WHERE player_id = ? AND hidden = 0').get(playerId) as { n: number }).n;
+}
+
 export function removeFromLibrary(playerId: number, key: string) {
   db.prepare('UPDATE library SET hidden = 1 WHERE player_id = ? AND song_key = ?').run(playerId, key);
 }

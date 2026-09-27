@@ -28,6 +28,10 @@ export class Library {
     $('library-close').addEventListener('click', () => this.close());
     $('library').addEventListener('click', (e) => e.target === $('library') && this.close());
     $('lib-search').addEventListener('input', () => this.render());
+    $<HTMLFormElement>('lib-add').addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.add();
+    });
     $('lib-sort').querySelectorAll<HTMLButtonElement>('[data-sort]').forEach((b) =>
       b.addEventListener('click', () => {
         this.sort = b.dataset.sort as Sort;
@@ -40,6 +44,7 @@ export class Library {
 
   async open() {
     $('library').classList.remove('hidden');
+    this.status('');
     $('lib-list').innerHTML = '<li class="empty">…</li>';
     try {
       this.songs = await api.library();
@@ -47,6 +52,34 @@ export class Library {
     } catch {
       $('lib-list').innerHTML = '<li class="empty">Sign in to keep a library</li>';
     }
+  }
+
+  /** Add the pasted links; new songs appear at the top. */
+  private async add() {
+    const input = $<HTMLInputElement>('lib-url');
+    const btn = $('lib-add').querySelector('button')!;
+    const urls = input.value.trim();
+    if (!urls) return input.focus();
+    btn.disabled = true;
+    this.status('Adding…');
+    try {
+      const res = await api.addToLibrary(urls);
+      this.songs = res.songs;
+      input.value = '';
+      const n = res.added.length;
+      this.status([n ? `Added ${n} song${n > 1 ? 's' : ''}` : '', ...res.errors].filter(Boolean).join(' · '), !n);
+      this.render();
+    } catch (e) {
+      this.status((e as Error).message, true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  private status(text: string, error = false) {
+    const el = $('lib-status');
+    el.textContent = text;
+    el.classList.toggle('error', error);
   }
 
   close() {
@@ -60,7 +93,7 @@ export class Library {
       .sort((a, b) => (this.sort === 'plays' ? b.plays - a.plays : this.sort === 'best' ? (b.best ?? -1) - (a.best ?? -1) : 0) || b.last_at - a.last_at);
     const el = $('lib-list');
     if (!list.length) {
-      el.innerHTML = `<li class="empty">${this.songs.length ? 'No match' : 'Songs you ride show up here'}</li>`;
+      el.innerHTML = `<li class="empty">${this.songs.length ? 'No match' : 'Add songs above, or ride one: it shows up here'}</li>`;
       return;
     }
     el.innerHTML = list
@@ -69,7 +102,7 @@ export class Library {
           ${thumb(s.song_key)}
           <div class="grow">
             <div class="title">${esc(s.title || s.song_key)}</div>
-            <div class="meta">${esc(s.artist)}${s.artist ? ' · ' : ''}${s.plays ? `${s.plays} ride${s.plays > 1 ? 's' : ''}` : 'not finished yet'} · ${ago(s.last_at)}</div>
+            <div class="meta">${esc(s.artist)}${s.artist ? ' · ' : ''}${s.plays ? `${s.plays} ride${s.plays > 1 ? 's' : ''}` : 'not ridden yet'} · ${ago(s.last_at)}</div>
           </div>
           <div class="lib-best">${s.best !== null ? `<b>${fmt(s.best)}</b><small>best</small>` : ''}</div>
           <button class="btn primary small" data-ride="${esc(s.song_key)}">Ride</button>

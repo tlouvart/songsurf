@@ -215,6 +215,11 @@
     <section id="library" class="overlay hidden">
       <div class="panel-wrap">
         <header class="panel-head"><h2>Library</h2><button class="icon-btn" id="library-close">✕</button></header>
+        <form class="lib-add" id="lib-add" autocomplete="off">
+          <input id="lib-url" type="text" inputmode="url" placeholder="Add songs: paste YouTube links" spellcheck="false" />
+          <button class="btn primary small" type="submit">Add</button>
+        </form>
+        <div class="lib-status" id="lib-status"></div>
         <div class="lib-bar">
           <input id="lib-search" type="search" placeholder="Search your songs" spellcheck="false" autocomplete="off" />
           <div class="seg" id="lib-sort">

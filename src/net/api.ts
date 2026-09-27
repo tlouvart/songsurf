@@ -125,3 +125,8 @@ export async function library(): Promise<LibrarySong[]> {
 export async function removeFromLibrary(key: string): Promise<LibrarySong[]> {
   return (await call<{ songs: LibrarySong[] }>(`/api/library?key=${encodeURIComponent(key)}`, { method: 'DELETE' })).songs;
 }
+
+/** Add songs to your library without playing them (YouTube links, separated by spaces or lines). */
+export async function addToLibrary(urls: string): Promise<{ songs: LibrarySong[]; added: string[]; errors: string[] }> {
+  return call('/api/library', { method: 'POST', body: JSON.stringify({ urls }) });
+}
