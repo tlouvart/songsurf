@@ -3,7 +3,7 @@ import { fakeAnalysis } from './audio/fake.ts';
 import { loadDemo, loadFile, loadYouTube, serverHasYouTube, type LoadedSong, type Status } from './audio/loader.ts';
 import { AudioFeed, MusicPlayer, Sfx } from './audio/playback.ts';
 import type { AudioAnalysis } from './audio/analyze.ts';
-import { AutopilotController, LocalController } from './game/controllers.ts';
+import { AutopilotController, BotController, LocalController } from './game/controllers.ts';
 import { RaceSim, type RaceEvent } from './game/sim.ts';
 import { Ghost, localBest, Recorder, saveLocalBest } from './game/ghosts.ts';
 import { InputLog } from './game/replay.ts';
@@ -32,6 +32,8 @@ const music = new MusicPlayer();
 const sfx = new Sfx();
 const net = new Net(api.token);
 const COUNTDOWN = 3;
+/** ?autopilot: races fly themselves and visuals follow the song's analysis (for filming trailers). Not ranked. */
+const AUTOPILOT = new URLSearchParams(location.search).has('autopilot');
 /** how often race inputs are streamed to the server (ms) */
 const INPUT_EVERY = 250;
 
@@ -140,6 +142,9 @@ function onRaceEvent(e: RaceEvent) {
 
 function buildSim(track: Track, withPlayer: boolean): { sim: RaceSim; local?: LocalController } {
   resetBlocks(track);
+  if (withPlayer && AUTOPILOT) {
+    return { sim: new RaceSim(track, new BotController({ reaction: 0.34, accuracy: 0.985, awareness: 1, sloppiness: 0.04 }, 11), PLAYER_COLOR, onRaceEvent) };
+  }
   if (withPlayer) {
     const local = new LocalController(canvas);
     return { sim: new RaceSim(track, local, PLAYER_COLOR, onRaceEvent), local };
@@ -171,7 +176,7 @@ async function startSolo(song: LoadedSong) {
   // ?seek=<seconds> starts mid-song: handy when working on a specific part of a track.
   const seek = Number(new URLSearchParams(location.search).get('seek')) || 0;
   // Runs on the server's analysis are streamed as they're ridden, then scored by the server.
-  const solo = song.official && menu.player && net.connected && !seek ? { log: new InputLog(), lastSent: 0, started: false } : undefined;
+  const solo = !AUTOPILOT && song.official && menu.player && net.connected && !seek ? { log: new InputLog(), lastSent: 0, started: false } : undefined;
   sim.input = solo?.log ?? null;
   abortSolo();
   session = {
@@ -745,7 +750,7 @@ function tick(now: number) {
   stage.setCovered(OVERLAYS.some((el) => !el.classList.contains('hidden')));
   if (s.mode !== 'paused') s.sim.update(time);
   if (s.mode === 'race' && !s.finished) s.recorder?.push(time, s.sim.racer.x, s.sim.racer.score);
-  s.feed.update(time, s.analysis, s.mode === 'race', dt);
+  s.feed.update(time, s.analysis, s.mode === 'race' && !AUTOPILOT, dt);
   stage.frame(s.sim, { time, dt: s.mode === 'paused' ? 0 : dt, bands: s.feed.bands, bass: s.feed.bass, energy: s.feed.energy });
 
   if (s.mode === 'race') {
@@ -781,7 +786,7 @@ requestAnimationFrame(() =>
 // Handy for debugging from the console.
 Object.assign(window, {
   songsurf: {
-    stage, net,
+    stage, net, music,
     get session() { return session; },
     get lobby() { return lobby; },
     /** Cross the finish line now (testing lobby flows without riding whole songs). */
