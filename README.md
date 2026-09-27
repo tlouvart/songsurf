@@ -101,6 +101,8 @@ cp .env.example .env        # optional overrides (public origin, cache size, bin
 docker compose up -d --build
 ```
 
+`deploy/deploy.sh user@host` ships the committed tree to a server over SSH and rebuilds it there.
+
 The container runs as a non-root user on a read-only filesystem with all capabilities dropped. The database, the audio cache and yt-dlp (which updates itself daily) live in the `songsurf-data` volume. By default it only listens on the Docker bridge (`172.17.0.1:3400`); put a TLS reverse proxy in front. `deploy/nginx-songsurf.conf` is the one used for songsurf.io, behind Cloudflare, and only accepts Cloudflare's addresses.
 
 Server settings (environment): `PORT`, `HOST`, `PUBLIC_ORIGIN` (the only origin allowed to open lobby sockets), `TRUST_PROXY=1` (take the client address from `CF-Connecting-IP` / `X-Real-IP`, only behind a proxy you control), `AUDIO_CACHE_MB` (audio cache budget, 3000 by default), `YTDLP_PATH`.
