@@ -311,11 +311,11 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
       const t = timeOf(i);
       const I = intensity[i];
       const rise = energy[Math.min(count - 1, i + half)] - energy[Math.max(0, i - half)];
-      let p = lerp(0.1, -0.16, I);
-      p += clamp(rise * 2.1, -0.34, 0.34);
-      p += clamp((melody[i] - melodyBase[i]) * 2.1, -0.26, 0.26) * (0.45 + 0.55 * I);
-      p += (0.07 + 0.27 * I * (0.5 + 0.5 * bass[i])) * Math.sin((2 * Math.PI * (t - phase0)) / (barLen * 2));
-      p += 0.34 * tension[i] - 0.5 * drop[i];
+      let p = lerp(0.06, -0.1, I);
+      p += clamp(rise * 1.4, -0.22, 0.22);
+      p += clamp((melody[i] - melodyBase[i]) * 1.4, -0.17, 0.17) * (0.45 + 0.55 * I);
+      p += (0.05 + 0.18 * I * (0.5 + 0.5 * bass[i])) * Math.sin((2 * Math.PI * (t - phase0)) / (barLen * 2));
+      p += 0.26 * tension[i] - 0.38 * drop[i];
       if (inLoop(t, barLen)) p *= 0.3;
       if (t < 0) p *= clamp((t + PRE_ROLL) / PRE_ROLL, 0, 1);
       pitch[i] = clamp(p, -0.8, 0.6);

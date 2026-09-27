@@ -249,7 +249,7 @@ export class Stage {
         break;
       }
       const groove = smooth01((b.pulse - 0.25) / 0.25) * (0.55 + 0.45 * b.hit);
-      this.ripples.add(b.s, 0.5 * groove * (b.downbeat ? 1.1 : 1));
+      this.ripples.add(b.s, 0.7 * groove * (b.downbeat ? 1.1 : 1));
     }
   }
 
