@@ -233,8 +233,8 @@ export class Stage {
   }
 
   /**
-   * Beat waves ahead: a crest on every beat, as tall as the drums hit there, wherever the
-   * drums keep a steady pattern (flat where they don't).
+   * Beat waves ahead: a crest on every beat wherever the drums keep a steady pattern, sized by
+   * how hard they hit and how intense that part of the song is; flat where the music is smooth.
    */
   private layBumps(tr: Track) {
     this.ripples.begin(this.playerS);
@@ -248,8 +248,13 @@ export class Stage {
         this.ripples.add(b.s, 0);
         break;
       }
+      // Big when the drums drive a heavy part, small in calm grooves, gone when the music smooths
+      // out (no steady hits), with a lift on downbeats and just after drops.
       const groove = smooth01((b.pulse - 0.25) / 0.25) * (0.55 + 0.45 * b.hit);
-      this.ripples.add(b.s, 0.7 * groove * (b.downbeat ? 1.1 : 1));
+      let afterDrop = 0;
+      for (const d of tr.drops) if (b.time >= d.time && b.time < d.time + 6) afterDrop = Math.max(afterDrop, 1 - (b.time - d.time) / 6);
+      const amp = 1.0 * groove * (0.3 + 0.7 * smooth01(b.intensity / 0.8)) * (b.downbeat ? 1.12 : 1) * (1 + 0.3 * afterDrop);
+      this.ripples.add(b.s, Math.min(1.2, amp));
     }
   }
 

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { frameAtS, holdLaneAt, laneX, newFrame, sAtTime, type Block, type Track } from '../track/track.ts';
 import { FOG_GLSL, TIER_COLORS, shared } from './palette.ts';
+import { RIPPLE_GLSL } from './ripples.ts';
 
 const VERT = /* glsl */ `
 attribute vec3 aColor;
@@ -9,6 +10,8 @@ attribute float aU;
 attribute float aState;
 attribute float aEnd;
 attribute float aWide;
+attribute vec3 aUp;
+attribute float aX;
 varying vec3 vColor;
 varying float vS;
 varying float vU;
@@ -16,9 +19,12 @@ varying float vState;
 varying float vEnd;
 varying float vWide;
 varying float vDist;
+${RIPPLE_GLSL}
 void main() {
   vColor = aColor; vS = aS; vU = aU; vState = aState; vEnd = aEnd; vWide = aWide;
-  vec4 mv = viewMatrix * modelMatrix * vec4(position, 1.0);
+  // Trails lie on the surface, so they ride the beat waves with it.
+  vec3 p = position + aUp * rippleHeight(aS, aX);
+  vec4 mv = viewMatrix * modelMatrix * vec4(p, 1.0);
   vDist = -mv.z;
   gl_Position = projectionMatrix * mv;
 }
@@ -65,13 +71,13 @@ export class TrailField {
   private streams: { id: number; start: number; count: number; last: number }[] = [];
 
   constructor(private tr: Track) {
-    const pos: number[] = [], col: number[] = [], sArr: number[] = [], uArr: number[] = [], endArr: number[] = [], wide: number[] = [];
+    const pos: number[] = [], col: number[] = [], sArr: number[] = [], uArr: number[] = [], endArr: number[] = [], wide: number[] = [], upArr: number[] = [], xArr: number[] = [];
     const idx: number[] = [];
 
     /** Sweep a ribbon along song time, following a (fractional) lane function. */
     const ribbon = (t0: number, t1: number, laneAt: (t: number) => number, width: number, h: number, color: THREE.Color, isWide: boolean) => {
       const first = pos.length / 3;
-      const steps = Math.max(2, Math.ceil((t1 - t0) * 40));
+      const steps = Math.max(2, Math.ceil((t1 - t0) * 60));
       const endS = sAtTime(this.tr, t1);
       for (let k = 0; k <= steps; k++) {
         const t = t0 + ((t1 - t0) * k) / steps;
@@ -86,6 +92,8 @@ export class TrailField {
           uArr.push(side < 0 ? 0 : 1);
           endArr.push(endS);
           wide.push(isWide ? 1 : 0);
+          upArr.push(fr.ux, fr.uy, fr.uz);
+          xArr.push(lx);
         }
         if (k < steps) {
           const a = first + k * 2;
@@ -122,6 +130,8 @@ export class TrailField {
     g.setAttribute('aU', new THREE.Float32BufferAttribute(uArr, 1));
     g.setAttribute('aEnd', new THREE.Float32BufferAttribute(endArr, 1));
     g.setAttribute('aWide', new THREE.Float32BufferAttribute(wide, 1));
+    g.setAttribute('aUp', new THREE.Float32BufferAttribute(upArr, 3));
+    g.setAttribute('aX', new THREE.Float32BufferAttribute(xArr, 1));
     this.state = new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3), 1);
     this.state.setUsage(THREE.DynamicDrawUsage);
     g.setAttribute('aState', this.state);
