@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, newFrame, sAtTime, valueAt, type Block, type Track } from '../track/track.ts';
+import { frameAt, frameAtS, indexAtS, indexAtTime, laneX, newFrame, valueAt, type Block, type Track } from '../track/track.ts';
 import { Ripples } from './ripples.ts';
 import type { RaceEvent, RaceSim } from '../game/sim.ts';
 import { BlockField } from './blocks.ts';
@@ -232,6 +232,29 @@ export class Stage {
     }
   }
 
+  /**
+   * Bumps on the kicks ahead: only where the song has a steady kick / bassline and isn't quiet,
+   * and on beats 1 and 3 in fast songs (where the kick usually sits), so it grooves.
+   */
+  private layBumps(tr: Track) {
+    this.ripples.begin(this.playerS);
+    if (!this.ripplesOn) return;
+    const beats = tr.beats;
+    let i = Math.max(0, this.lastBeatIdx - 2);
+    while (i > 0 && beats[i].s > this.playerS - 40) i--;
+    for (; i < beats.length; i++) {
+      const b = beats[i];
+      if (b.s < this.playerS - 40) continue;
+      if (b.s > this.playerS + 560) break;
+      if (tr.bpm > 135 && b.inBar % 2 === 1) continue;
+      const groove = smooth01((b.pulse - 0.3) / 0.3) * smooth01((b.intensity - 0.2) / 0.3) * smooth01((b.kick - 0.15) / 0.3);
+      if (groove <= 0) continue;
+      const next = beats[i + (tr.bpm > 135 ? 2 : 1)];
+      const gap = next ? next.s - b.s : 60;
+      this.ripples.add(b.s, 0.34 * groove * (b.downbeat ? 1.15 : 1), Math.min(12, Math.max(4, gap * 0.32)));
+    }
+  }
+
   frame(sim: RaceSim, input: FrameInput) {
     const tr = this.track;
     if (!tr) return;
@@ -243,20 +266,7 @@ export class Stage {
     let bi = this.lastBeatIdx;
     while (bi + 1 < beats.length && beats[bi + 1].time <= time) bi++;
     while (bi >= 0 && beats[bi].time > time) bi--;
-    if (bi < this.lastBeatIdx) this.ripples.reset(); // seek / restart
-    if (bi !== this.lastBeatIdx && bi >= 0) {
-      // Only a steady kick / bassline makes the surface swell, once per pulse (every other
-      // beat in fast songs, so it grooves rather than buzzes). Quiet or pulse-less parts stay calm.
-      const b = beats[bi];
-      const groove = smooth01((b.pulse - 0.3) / 0.3) * smooth01((b.intensity - 0.2) / 0.3);
-      const onPulse = tr.bpm <= 135 || bi % 2 === 0;
-      if (this.ripplesOn && onPulse && groove > 0 && time - b.time < 0.3) {
-        const amp = 0.3 * groove * (0.55 + 0.45 * b.kick) * (b.downbeat ? 1.15 : 1);
-        this.ripples.spawn(sAtTime(tr, b.time + 0.5), 0, b.time, amp);
-      }
-      this.lastBeatIdx = bi;
-    }
-    this.ripples.time = time;
+    if (bi !== this.lastBeatIdx && bi >= 0) this.lastBeatIdx = bi;
     this.beatAge = bi >= 0 ? time - beats[bi].time : 10;
     const downbeat = bi >= 0 && beats[bi].downbeat;
     // A soft swell rather than a strobe.
@@ -290,8 +300,9 @@ export class Stage {
     intensityColor(this.heat, shared.uHeat.value);
     if (overdrive) shared.uHeat.value.lerp(tmpColor.setHex(local.color), 0.35);
     shared.uBands.value.set(input.bands);
-    shared.uRipples.value.set(this.ripples.data);
-    shared.uRippleTime.value = this.ripples.time;
+    this.layBumps(tr);
+    shared.uBumps.value.set(this.ripples.data);
+    shared.uBumpS.value = this.playerS;
 
     // --- ship ----------------------------------------------------------------------
     this.ship?.update(f0, local.x, local.vx, time, dt, {

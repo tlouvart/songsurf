@@ -8,7 +8,7 @@ import type { AudioAnalysis, Band } from './analyze.ts';
  */
 
 /** Bump when the analysis changes: cached analyses are recomputed. */
-export const ANALYSIS_VERSION = 1;
+export const ANALYSIS_VERSION = 2;
 
 const CURVES = ['loudness', 'intensity', 'low', 'mid', 'high', 'centroid'] as const;
 

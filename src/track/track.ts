@@ -8,7 +8,7 @@ const smootherstep = (u: number) => u * u * u * (u * (u * 6 - 15) + 10);
  * Bump whenever generation changes the layout of a song's track: ghosts and leaderboards
  * are keyed on it, since a recorded run only makes sense on the exact same track.
  */
-export const TRACK_VERSION = 7;
+export const TRACK_VERSION = 8;
 
 export const LANES = 5;
 export const LANE_WIDTH = 3.2;
@@ -72,6 +72,8 @@ export interface BeatMark {
   time: number;
   s: number;
   downbeat: boolean;
+  /** position in the bar, 0 (downbeat) to 3 */
+  inBar: number;
   intensity: number;
   /** 0..1: how hard the bass hits on this beat (kick / bassline) */
   kick: number;
@@ -424,6 +426,7 @@ export function generateTrack(a: AudioAnalysis, seed: string): Track {
       time: t,
       s: sAtTime(track, t),
       downbeat: (i - a.downbeatPhase) % 4 === 0,
+      inBar: (((i - a.downbeatPhase) % 4) + 4) % 4,
       intensity: intensity[Math.round(indexAtTime(track, t))],
       kick: 0,
       pulse: 0,

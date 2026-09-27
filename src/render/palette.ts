@@ -72,7 +72,7 @@ export const shared = {
   uFogNear: { value: 260 },
   uFogFar: { value: 900 },
   uBands: { value: new Float32Array(16) },
-  /** track ripples (see ./ripples.ts) */
-  uRipples: { value: new Float32Array(8 * 4) },
-  uRippleTime: { value: 0 },
+  /** beat bumps on the track surface (see ./ripples.ts) */
+  uBumps: { value: new Float32Array(24 * 3) },
+  uBumpS: { value: 0 },
 };

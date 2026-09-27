@@ -201,7 +201,23 @@ export function analyzeAudio(
   onProgress(0.85);
 
   // ---- tempo + beat tracking -------------------------------------------
-  const { bpm, beats } = trackBeats(odf, fps);
+  const tracked = trackBeats(odf, fps);
+  const bpm = tracked.bpm;
+  let beats = tracked.beats;
+  // The tracker can lock onto the off-beats (a loud snare on 2 and 4, common in rock and
+  // punk). Kicks belong on the beat: if the bass hits land half a beat off, shift the grid.
+  {
+    const spb = 60 / bpm;
+    // Bass level right at the beat vs half a beat later (the level, not onsets: distorted
+    // guitars blur low-band onsets in rock).
+    const bassAt = (t: number) => low[Math.min(frames - 1, Math.max(0, Math.round(t * fps)))];
+    let on = 0, off = 0;
+    for (const b of beats) { on += bassAt(b); off += bassAt(b + spb / 2); }
+    if (off > on * 1.06) {
+      beats = beats.map((b) => b + spb / 2).filter((b) => b < duration);
+      if (beats.length && beats[0] - spb >= 0) beats.unshift(beats[0] - spb);
+    }
+  }
   let downbeatPhase = 0;
   {
     let best = -1;
